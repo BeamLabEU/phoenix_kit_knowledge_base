@@ -126,8 +126,14 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
   # ── v1 ────────────────────────────────────────────────────────────────────
 
   defp up_v1(prefix) do
-    Helpers.ensure_uuid_v7_function(prefix)
-
+    # `uuid_generate_v7()` is core's, created by its V01 in the install schema,
+    # and this module's migration only ever runs after core is installed. An
+    # earlier version called `Helpers.ensure_uuid_v7_function/1` here for
+    # safety, which emitted `CREATE OR REPLACE FUNCTION` into core's schema —
+    # the one piece of DDL this module aimed outside its own tables, and
+    # something no sibling module does. Depending on the function is fine;
+    # (re)defining it is core's job. If it is genuinely absent the migration
+    # fails loudly on the first table, which is the right way to find out.
     up_v1_vaults(prefix)
     up_v1_members(prefix)
     up_v1_folders(prefix)

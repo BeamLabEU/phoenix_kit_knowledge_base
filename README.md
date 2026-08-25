@@ -416,6 +416,18 @@ For cross-repo work against a local PhoenixKit checkout:
 export PHOENIX_KIT_PATH=../phoenix_kit
 ```
 
+## Development notes
+
+Working material lives in `dev_docs/`, date-prefixed:
+
+| Document | What it is |
+|---|---|
+| [`2026-08-25-knowledge-base-goals.md`](dev_docs/2026-08-25-knowledge-base-goals.md) | The brief, the founding decisions and the reasoning behind them |
+| [`2026-08-25-leaf-collaboration-spec.md`](dev_docs/2026-08-25-leaf-collaboration-spec.md) | What Leaf needs for multi-user editing, staged |
+| [`reports/`](dev_docs/reports) | Dated progress reports |
+
+None of it ships in the Hex package.
+
 ## License
 
 MIT
