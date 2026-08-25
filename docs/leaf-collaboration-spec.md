@@ -3,9 +3,11 @@
 Notes for Alex, from building `phoenix_kit_knowledge_base` on Leaf 0.5.1.
 
 The goal is Google-Docs-style editing: two people in the same note, both typing,
-both seeing each other's characters appear, nothing lost. This document is what
-that requires from Leaf, staged so it can be built in order — each stage is
-independently useful, and the vault gets better at every step.
+both seeing each other's characters appear, nothing lost.
+
+**The headline, which changed after surveying Hex: the CRDT side is close to
+solved, and almost all the remaining difficulty is in Leaf.** Everything
+downstream of a document model is assembly with existing libraries.
 
 ## Where things stand
 
@@ -22,12 +24,41 @@ The underlying issue is which way the truth flows. In Leaf the DOM is
 authoritative and markdown is derived from it. Collaborative editing needs the
 inverse: a shared document is authoritative and the editor renders it.
 
+## What the ecosystem already provides
+
+Surveyed on Hex, August 2026:
+
+| Package | Version | Downloads | What it gives us |
+|---|---|---|---|
+| [`y_ex`](https://hex.pm/packages/y_ex) | 0.10.5 (Apr 2026) | 139k | **Yjs on the BEAM**, wrapping the `y-crdt` Rust core. Near-full parity with yjs 13.6: YText with formatting deltas and embeds, YMap, YArray, subdocuments, snapshots, sticky indexes, undo manager, document observers, transaction origins, **and Awareness**. |
+| [`prosemirror_ex`](https://hex.pm/packages/prosemirror_ex) | 0.3.0 (Jul 2026) | 6.2k | Elixir port of `prosemirror-model` + `prosemirror-transform`, wire-compatible — server-side document manipulation if we ever want it |
+| [`delta_crdt`](https://hex.pm/packages/delta_crdt) | — | 2.4M | δ-CRDTs for distributed *state* (what Horde uses). Different problem; useful later for cluster-wide session ownership, not for text. |
+
+`y_ex` is by [satoren](https://github.com/satoren/y_ex), who works in the Yjs
+ecosystem proper — this is not a weekend port.
+
+**The decisive find**:
+[`y-phoenix-channel`](https://github.com/satoren/y-phoenix-channel) is a working
+demo of `y_ex` + Phoenix Channels driving **Excalidraw, Quill, BlockNote,
+Lexical, Tiptap and ProseMirror**, all collaborating. It is a demo app rather
+than a Hex package, so the transport layer is copy-paste today — but it proves
+the whole Elixir half works, against six editors.
+
+Two of those six are ProseMirror-based. Which means:
+
+> If Leaf's core becomes ProseMirror (or Lexical), collaboration is largely
+> **already built**. `y-prosemirror` binds the editor to a Y.Doc, `y_ex` holds
+> it server-side, a Phoenix Channel carries the updates.
+
+That inverts the cost estimate in the first draft of this document. The
+expensive part is not the CRDT. It is Stage 1.
+
 ## Staged plan
 
-### Stage 0 — `[[wiki-link]]` rendering (unrelated, but the thing we want most)
+### Stage 0 — `[[wiki-link]]` rendering
 
-Not collaboration, listed first because it is the biggest single improvement and
-is independent of everything below.
+Not collaboration, listed first because it is the biggest single improvement,
+independent of everything below, and shippable against Leaf as it stands.
 
 Leaf already proves the mechanism: configuring a `#` suggestion trigger makes
 hashtags render as tinted tokens in the visual and hybrid surfaces while the
@@ -54,89 +85,107 @@ What we would need:
   })
   ```
 - Clicking one emits `{:leaf_link_clicked, %{editor_id, target}}` so the host
-  navigates. Unresolved targets styled distinctly (Obsidian shows them muted).
+  navigates. Unresolved targets styled distinctly, as Obsidian mutes them.
 
-We already have the server half of this working and tested —
+The server half of this is already built and tested here —
 `PhoenixKitKnowledgeBase.Markdown.to_html/2` resolves `[[…]]` against a vault,
 including the ambiguity rules — so the host side is ready the day Leaf can ask.
 
 ### Stage 1 — a document model
 
-The prerequisite for everything after it. Replace raw `contenteditable` with an
-editor core that has addressable positions and a transaction log:
-**ProseMirror** (or Tiptap over it), or **Lexical**.
+**This is the whole job.** Replace raw `contenteditable` with an editor core that
+has addressable positions and a transaction log: **ProseMirror** (or Tiptap over
+it) or **Lexical**.
 
-This is the expensive step and it is a rewrite of Leaf's core, not an addition.
-Toolbar, hybrid live preview, suggestions and the markdown round-trip all get
-rebuilt on top of the new model. Worth being honest about that up front rather
-than discovering it in week three.
+It is a rewrite of Leaf's core, not an addition. Toolbar, hybrid live preview,
+suggestions and the markdown round-trip all get rebuilt on top of the new model.
+Worth being honest about that up front rather than discovering it in week three.
 
 Why not build a CRDT directly on contenteditable: `y-prosemirror`, `y-quill` and
 `y-lexical` all exist because those editors expose document models. There is no
 `y-contenteditable`, and that is not an oversight.
 
-### Stage 2 — operations on the wire
+Both viable targets have first-class Yjs bindings and both appear in the
+`y-phoenix-channel` demo, so either choice keeps Stage 2 cheap. ProseMirror has
+the richer markdown story; Lexical is lighter and newer.
 
-Once there is a model, emit changes as operations rather than snapshots:
+### Stage 2 — bind to Yjs
 
-```elixir
-{:leaf_ops, %{editor_id: id, version: 42, ops: [...]}}
-```
+Once there is a model, this is mostly assembly:
 
-Keep `content_changed` as it is — hosts that only want "give me the markdown"
-should not have to care. This is additive.
+- `y-prosemirror` (or `y-lexical`) binds the editor to a `Y.Doc`
+- the host holds the authoritative `Y.Doc` in `y_ex`
+- a Phoenix Channel carries binary updates both ways
+- `y_ex`'s Awareness carries cursors and presence
 
-At this point the host can persist meaningfully more often and, importantly, can
-tell *what* changed.
+What Leaf needs to expose, and it is a short list:
 
-### Stage 3 — CRDT as the source of truth
+1. **Accept a `Y.Doc` and an awareness instance at mount** — or expose the
+   underlying editor view so the host can install the binding plugin itself.
+   Built-in is friendlier; an escape hatch is enough.
+2. **Emit local updates** as opaque binary for the host to broadcast.
+3. **Apply remote updates without moving the local caret.** This is the point
+   that makes or breaks the feel, and it is why this cannot be `set_content`
+   with extra steps.
+4. **Surface awareness state** so remote cursors can be drawn.
 
-Bind the model to **Yjs** (`y-prosemirror` is the well-trodden path). The Y.Doc
-becomes authoritative; the editor renders it; markdown becomes a projection.
+`content_changed` should stay exactly as it is. Hosts that only want "give me
+the markdown" must not have to care — this whole path is additive.
 
-Transport is the host's problem, not Leaf's — we already have Phoenix PubSub
-carrying per-vault messages and would carry Yjs updates the same way. What Leaf
-needs to expose:
+### Stage 3 — awareness UI
 
-- a way to hand it a `Y.Doc` (or a provider) at mount
-- emit local updates as opaque binary for the host to broadcast
-- accept remote updates and apply them **without moving the local caret**
+Remote carets, selections, names, colours. Rendering work on top of data Yjs
+already carries. Cheap, and it is what makes collaboration *feel* like Google
+Docs rather than merely be it.
 
-That last point is the one that makes or breaks the feel. It is why this cannot
-be `set_content` with extra steps.
+## Storage: settled
 
-### Stage 4 — awareness
+The first draft flagged a tension — a CRDT and file-based storage pull against
+each other, and this vault is file-based on purpose so `rg`, `git`, `vim` and
+Obsidian work directly on the notes.
 
-Remote cursors, selections and names. Yjs has `awareness` built in; this is
-mostly rendering once Stage 3 exists. Cheap, and it is the part that makes
-collaboration *feel* like Google Docs rather than merely be it.
+**Resolved: the CRDT lives in Postgres while a note is being edited, and is
+flushed to the file on a timer. The files are deliberately not real-time.**
 
-## One design decision worth settling early
+That gives a clean rule for which copy is authoritative:
 
-**A CRDT and file-based storage pull against each other**, and this vault is
-file-based on purpose — notes are `.md` files on disk so `rg`, `git`, `vim` and
-Obsidian all work on them directly.
+| Situation | Source of truth |
+|---|---|
+| No live editing session | the `.md` file |
+| A session is open | the `Y.Doc` in Postgres; the file is a lagging export |
 
-If a Y.Doc is authoritative, then:
+And a lifecycle:
 
-- the CRDT state has to be persisted somewhere (a blob in Postgres), and
-- the `.md` file becomes a derived export, needing a flush policy, and
-- an edit made in `vim` while a CRDT session is live has no defined merge — the
-  file changed underneath a document whose history knows nothing about it.
+1. **Hydrate** — first person opens a note with no live session: read the file,
+   build a `Y.Doc` from its text, record the file's hash.
+2. **Edit** — updates flow browser → channel → `y_ex` → fan-out to peers.
+   Persisted to Postgres as they arrive, so a crash loses seconds, not work.
+3. **Flush** — write the file, debounced after the last change and capped by a
+   maximum interval, plus immediately when the last participant leaves and on
+   graceful shutdown. Flushing also reindexes: hash, mtime, front matter, tags,
+   links.
+4. **Retire** — after an idle period with no participants, flush and drop the
+   `Y.Doc`. The next session re-hydrates from the file.
 
-It is not a coincidence that Obsidian is file-based and has no live co-editing;
-Obsidian Sync resolves at file level, exactly as we do today.
+Retiring rather than keeping CRDT state forever keeps storage bounded and
+tombstones from accumulating across months. The cost is that a client which was
+offline across a session boundary cannot merge its local updates — acceptable
+when the document only exists in the browser while the page is open, which is
+the case here.
 
-A workable answer, if you want both: treat the CRDT as a **session** artifact
-rather than the permanent record. The file stays authoritative at rest; opening
-a note for collaborative editing hydrates a Y.Doc from it; the doc is flushed
-back on idle and torn down when the last participant leaves. External edits are
-then only ambiguous while a session is live, which is a much smaller problem than
-the general one — and can be handled by refusing to start a session on a file
-whose hash has moved.
+Two details this leaves for the host, both ours to handle, neither Leaf's
+problem:
 
-Worth deciding before Stage 3, because it determines whether the Y.Doc needs
-durable storage at all.
+- **External edits during a live session.** Someone runs `vim` on a file whose
+  `Y.Doc` is live. Detect it at flush time by comparing the file's current hash
+  against the one recorded at hydration — the same guard the app already uses
+  for ordinary saves — and raise a conflict rather than letting the flush
+  silently overwrite. Rescan should skip notes with a live session, or flush
+  them first.
+- **One session per note, cluster-wide.** The `Y.Doc` owner should be a single
+  supervised process per note, registered globally. `Horde` (built on
+  `delta_crdt`, already in the ecosystem) is the obvious fit if this ever runs
+  on more than one node.
 
 ## What the host already provides
 
@@ -147,17 +196,31 @@ So the Leaf work is not blocked on us:
   own writes.
 - **Conflict detection** — every write compares the file's hash against the one
   indexed when it was opened; the second writer is stopped rather than merged,
-  and gets an explicit reload-or-overwrite choice.
+  and gets an explicit reload-or-overwrite choice. The flush guard above is the
+  same mechanism.
 - **Link resolution** — `[[…]]` targets resolved against a vault, including
   same-folder and shortest-path tie-breaking for ambiguous titles, plus
   path-qualified `[[folder/Note]]`.
 
 Stage 0 could ship against that today.
 
+## Practical notes
+
+- `y_ex` depends on `rustler_precompiled`, so it downloads a prebuilt NIF on
+  common targets and falls back to a source build otherwise — the same
+  arrangement as `mdex`, which PhoenixKit already carries. On a machine that
+  forces source builds, expect a Rust toolchain requirement.
+- The transport layer in `y-phoenix-channel` is a demo, not a package. Whoever
+  builds Stage 2 will be extracting it. That extraction — document lifecycle,
+  Ecto persistence adapter, awareness fan-out, packaged JS — is a genuine gap on
+  Hex and would be worth publishing once it has run in production. Worth doing
+  *after* it works here, not before.
+
 ## Suggested first conversation
 
 If only one thing gets built, make it **Stage 0**. It is independent, it is the
-feature users notice most, and it does not commit anyone to the rewrite in
-Stage 1.
+feature users notice most, and it commits nobody to the rewrite in Stage 1.
 
-Stages 1–4 are worth scoping as a Leaf 1.0 rather than a point release.
+For Stage 1, the decision to make is narrow: **ProseMirror or Lexical.** Once
+that lands, Stages 2 and 3 are largely wiring together libraries that already
+exist and already work with Phoenix.

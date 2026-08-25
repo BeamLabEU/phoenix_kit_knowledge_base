@@ -14,7 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   original path — so restore is a move, and deleting the same path twice keeps
   both copies. Trash panel with restore, permanent delete and empty.
 - **Leaf collaboration spec** (`docs/leaf-collaboration-spec.md`) — what Leaf
-  needs for CRDT multi-user editing, staged.
+  needs for CRDT multi-user editing, staged, with the Hex ecosystem survey
+  (`y_ex`, `prosemirror_ex`, the `y-phoenix-channel` demo) and the settled
+  storage model: the CRDT lives in Postgres while a note is open and is flushed
+  to disk on a timer.
 - **Live sync across browsers and devices.** Each vault page subscribes to a
   PubSub topic; note saves, deletions, folder changes and rescans propagate to
   every open session. A note open in reading view is replaced immediately; one

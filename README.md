@@ -369,7 +369,11 @@ Each a clean addition later; none needs a schema change:
 - **Note history.** No revisions table — though the vault is a directory, so
   `git init` in it gives you exactly that.
 - **Collaborative editing.** Concurrent edits to one note are detected, not
-  merged. A CRDT is a different project.
+  merged. The route to Google-Docs-style editing is mapped out in
+  [the Leaf spec](docs/leaf-collaboration-spec.md): `y_ex` holds the CRDT
+  server-side, Postgres holds it while a note is open, and the `.md` file is
+  flushed on a timer — files are deliberately not real-time. The blocker is
+  Leaf needing a document model, not the CRDT layer.
 - **Presence.** No "3 people viewing this vault" indicator.
 - **Folder rename in the UI.** `mv` the directory and rescan.
 
