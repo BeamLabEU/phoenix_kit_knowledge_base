@@ -1087,7 +1087,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         </ul>
       </section>
 
-      <section :if={@search_results and not @trash_open} class="space-y-1">
+      <%!-- `is_nil/1` rather than plain truthiness: `@search_results` is nil when
+      no search is running, and `nil and …` is a BadBooleanError even though
+      `:if={@search_results}` on its own would have been fine. --%>
+      <section :if={not is_nil(@search_results) and not @trash_open} class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
           {length(@search_results)} results
         </h2>

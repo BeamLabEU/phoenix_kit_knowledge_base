@@ -382,10 +382,29 @@ mix quality       # format, credo --strict, dialyzer
 ```
 
 Tests are database-free by design: they cover markdown parsing, path containment
-and filename sanitisation against a real temp directory, link-resolution
-tie-breaking, changeset invariants, behaviour compliance, route ordering and
+and filename rules against a real temp directory, link-resolution tie-breaking,
+editor identity, changeset invariants, behaviour compliance, route ordering and
 migration version bookkeeping. The database-backed paths (indexing, rescan,
 search) are exercised against a live Postgres instead.
+
+### Rendering pages
+
+`mix test` has no endpoint, so it cannot catch a mistake in a template — and an
+unauthenticated `curl` never gets past the login redirect, so it never renders
+one either. A `BadBooleanError` in the sidebar reached the browser through
+exactly that gap. `scripts/smoke_http.exs` closes it by forging a session cookie
+and fetching every page as a logged-in user:
+
+```bash
+cd /path/to/host_app
+APP_PID=$(pgrep -f "mix phx.server" | head -1) \
+  mix run --no-start ../phoenix_kit_knowledge_base/scripts/smoke_http.exs
+```
+
+It creates a scratch vault with a note, a dangling link and a trashed note,
+fetches all five pages plus the not-found redirect, and fails on any 500 or
+exception page. Host-specific values (repo module, session key, signing salt)
+are at the top of the file.
 
 For cross-repo work against a local PhoenixKit checkout:
 

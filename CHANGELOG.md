@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Every vault page crashed with `BadBooleanError`.** The trash panel added
+  `@search_results and not @trash_open` to a section guard; `@search_results` is
+  `nil` when no search is running, and `nil and …` raises even though
+  `:if={@search_results}` alone is fine. Added `scripts/smoke_http.exs`, which
+  renders every page as a logged-in user, because neither the database-free test
+  suite nor an unauthenticated request executes a template.
 - **Two deletions in the same second lost the first recoverable copy** — trash
   directories are now unique per deletion, not per second.
 - **Autosave could silently overwrite a colleague's edit.** Once a conflict was
