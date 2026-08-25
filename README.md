@@ -4,7 +4,7 @@ An Obsidian-style linked knowledge base for [PhoenixKit](https://hex.pm/packages
 backed by **real markdown files on disk**.
 
 ```
-priv/knowledge_base/users/fotkin-gmail-com/research/
+priv/knowledge_base/users/ada-example-com/research/
 ├── Inbox.md
 ├── papers/
 │   ├── Attention Is All You Need.md
@@ -120,10 +120,9 @@ Every vault page subscribes to a PubSub topic for that vault, so changes
 propagate live:
 
 - **another note changed** → your sidebar, backlinks and unresolved list refresh
-- **the note you're reading changed** → replaced immediately, since there is
-  nothing to lose in reading view
-- **the note you're editing changed** → announced with a banner, never replaced;
-  reloading is your call, because your buffer may hold unsaved keystrokes
+- **the note you're on changed** → announced with a banner, never replaced.
+  There is only one surface and it may hold unsaved keystrokes, so reloading is
+  always your call
 - **the note you're on was deleted** → you're returned to the vault
 - **a rescan ran anywhere** — including `mix phoenix_kit_knowledge_base.rescan`
   in a terminal — → every open browser refreshes
@@ -319,12 +318,13 @@ so containment is enforced twice, in two different ways:
 2. the joined result is expanded and re-checked to still be under the base.
 
 Symlinks *inside* a vault are skipped rather than followed, so a planted link
-can't pull `/etc/passwd` into an index. Filenames are sanitised (separators
-stripped, leading dots removed so a note can't become an invisible file, byte-
-truncated without splitting a codepoint). Writes are atomic — temp file plus
-rename — so no reader ever sees a half-written note.
+can't pull `/etc/passwd` into an index. Names this app creates are validated and
+**refused** when unusable rather than repaired (see [File names](#file-names)) —
+a silently-stripped separator is a note filed somewhere its author didn't
+choose. Writes are atomic — temp file plus rename — so no reader ever sees a
+half-written note.
 
-There are 35 tests on this module alone.
+There are 51 tests on this module alone.
 
 ## Schema
 
@@ -381,7 +381,7 @@ Each a clean addition later; none needs a schema change:
 
 ```bash
 mix deps.get
-mix test          # 126 tests, no database required
+mix test          # 156 tests, no database required
 mix quality       # format, credo --strict, dialyzer
 ```
 
@@ -416,7 +416,7 @@ For cross-repo work against a local PhoenixKit checkout:
 export PHOENIX_KIT_PATH=../phoenix_kit
 ```
 
-## Development notes
+## Design notes and history
 
 Working material lives in `dev_docs/`, date-prefixed:
 
@@ -426,7 +426,9 @@ Working material lives in `dev_docs/`, date-prefixed:
 | [`2026-08-25-leaf-collaboration-spec.md`](dev_docs/2026-08-25-leaf-collaboration-spec.md) | What Leaf needs for multi-user editing, staged |
 | [`reports/`](dev_docs/reports) | Dated progress reports |
 
-None of it ships in the Hex package.
+[`AGENTS.md`](AGENTS.md) is the contributor guide — the invariants, the
+verification layers and every gotcha that has already cost time. `CLAUDE.md`
+symlinks to it. None of this ships in the Hex package.
 
 ## License
 
