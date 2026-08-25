@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of being unlinked, under a per-deletion directory that preserves the
   original path — so restore is a move, and deleting the same path twice keeps
   both copies. Trash panel with restore, permanent delete and empty.
-- **Leaf collaboration spec** (`docs/leaf-collaboration-spec.md`) — what Leaf
+- **Leaf collaboration spec** (`dev_docs/2026-08-25-leaf-collaboration-spec.md`) — what Leaf
   needs for CRDT multi-user editing, staged, with the Hex ecosystem survey
   (`y_ex`, `prosemirror_ex`, the `y-phoenix-channel` demo) and the settled
   storage model: the CRDT lives in Postgres while a note is open and is flushed

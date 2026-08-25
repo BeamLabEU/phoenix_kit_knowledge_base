@@ -270,7 +270,7 @@ inline while the source markers stay editable. Edits autosave.
 
 Until Leaf renders `[[wiki-links]]` they are literal text in the editor; the
 right-hand panel lists a note's outgoing links so navigation does not depend on
-it. See [the Leaf spec](docs/leaf-collaboration-spec.md).
+it. See [the Leaf spec](dev_docs/2026-08-25-leaf-collaboration-spec.md).
 
 **Visual and HTML modes are denied.** Both round-trip the document through HTML,
 and YAML front matter is `---`-delimited — which survives that trip as a
@@ -370,7 +370,7 @@ Each a clean addition later; none needs a schema change:
   `git init` in it gives you exactly that.
 - **Collaborative editing.** Concurrent edits to one note are detected, not
   merged. The route to Google-Docs-style editing is mapped out in
-  [the Leaf spec](docs/leaf-collaboration-spec.md): `y_ex` holds the CRDT
+  [the Leaf spec](dev_docs/2026-08-25-leaf-collaboration-spec.md): `y_ex` holds the CRDT
   server-side, Postgres holds it while a note is open, and the `.md` file is
   flushed on a timer — files are deliberately not real-time. The blocker is
   Leaf needing a document model, not the CRDT layer.
