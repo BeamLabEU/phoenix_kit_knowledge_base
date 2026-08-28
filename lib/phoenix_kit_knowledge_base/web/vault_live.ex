@@ -542,12 +542,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # naming it in `phx-hook` — it ships no JavaScript of its own.
 
   def handle_event("move_file_to_folder", %{"file_uuid" => note_uuid} = params, socket) do
-    folder = Map.get(params, "folder_uuid", "")
-
     with :ok <- require_write(socket),
+         # The hook names the drop target by uuid; `move_note/4` takes a path.
+         # Passing the uuid through creates a directory *named* with the uuid.
+         {:ok, folder_path} <- drop_target_path(socket, params["folder_uuid"]),
          %Note{} = note <- Notes.get_note(socket.assigns.vault.uuid, note_uuid),
          {:ok, _moved} <-
-           Notes.move_note(socket.assigns.vault, note, folder, actor_uuid: actor_uuid(socket)) do
+           Notes.move_note(socket.assigns.vault, note, folder_path,
+             actor_uuid: actor_uuid(socket)
+           ) do
       {:noreply, socket |> load_workspace() |> assign_note_links()}
     else
       _ -> {:noreply, put_flash(socket, :error, "Could not move that note.")}
@@ -559,7 +562,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
     with :ok <- require_write(socket),
          %{} = folder <- Notes.get_folder(socket.assigns.vault.uuid, uuid),
-         {:ok, parent_path} <- target_parent_path(socket, target_parent),
+         {:ok, parent_path} <- drop_target_path(socket, target_parent),
          target <- Path.join(parent_path, folder.name),
          {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
       {:noreply, reselect_folder(socket, folder.relative_path, target)}
@@ -920,9 +923,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
-  defp target_parent_path(_socket, target) when target in [nil, "", "root"], do: {:ok, ""}
+  # Core's drag-drop hook names every drop target by folder uuid, and resolves
+  # the vault root to "" before it gets here. Everything in this module names a
+  # folder by its path. This is the one place the two meet, and both drop
+  # handlers go through it — passing a uuid on to `Notes.move_note/4` or
+  # `relocate_folder/3` does not fail, it creates a directory *named* with the
+  # uuid, which is how that shipped once.
+  defp drop_target_path(_socket, target) when target in [nil, "", "root"], do: {:ok, ""}
 
-  defp target_parent_path(socket, uuid) do
+  defp drop_target_path(socket, uuid) do
     case folder_path_for(socket, uuid) do
       nil -> {:error, :not_found}
       path -> {:ok, path}
