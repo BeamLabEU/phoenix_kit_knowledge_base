@@ -1,5 +1,12 @@
 # What Leaf needs for multi-user editing
 
+> **Superseded, 2026-08-28.** Leaf 0.6.0 shipped live editing. It went a
+> different way than this document proposes — operational rebasing rather than
+> a CRDT, so no `y_ex` — but the storage model here is what it built: a room
+> holds the document while people are editing, the file is a lagging export,
+> and flushing is on a pause-and-interval timer. See
+> [2026-08-28-leaf-0.6-findings.md](2026-08-28-leaf-0.6-findings.md).
+
 Notes for Alex, from building `phoenix_kit_knowledge_base` on Leaf 0.5.1.
 
 The goal is Google-Docs-style editing: two people in the same note, both typing,

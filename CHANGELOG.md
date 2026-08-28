@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`[[wiki-links]]` render as links in the editor.** Leaf 0.6.0 decorates them
+  and asks which targets exist; the answer goes through the same resolver and
+  same-folder tie-break that builds the stored link index, so a link never
+  renders as pointing somewhere the backlinks panel disagrees with. An
+  ambiguous title still resolves and now says so on hover, naming the note it
+  picked. An unresolved target is styled distinctly and points at the create
+  page. Ctrl/Cmd-click follows while editing; a click in a read-only vault
+  follows on its own. Leaf never navigates — the target is re-resolved on the
+  server rather than trusting the href the page was rendered with.
 - **`scripts/verify_links.exs`** — link resolution checked against a real
   database: what a link points at after every operation that can change the
   answer. `mix test` is deliberately database-free and `smoke_http.exs` only

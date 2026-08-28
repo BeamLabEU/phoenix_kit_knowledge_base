@@ -18,9 +18,16 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   editable. Someone with read-only access gets the same surface, not a different
   one.
 
-  Until Leaf renders `[[wiki-links]]` they are literal text in the editor; the
-  right-hand panel lists this note's outgoing links so navigation does not
-  depend on it.
+  `[[wiki-links]]` render as link tokens in the editor itself. Leaf decorates
+  them and asks which targets exist — only this module knows that — and the
+  answer goes back through the same resolver and same-folder tie-break that
+  built the stored link index, so a link never renders as pointing somewhere
+  the backlinks panel disagrees with. An unresolved target is styled distinctly
+  and points at the create page.
+
+  Leaf never navigates on a click; it reports one and leaves the destination to
+  us. The right-hand panel still lists outgoing links, which is the path for a
+  reader who wants the whole set rather than the one under the cursor.
 
   Visual and HTML modes are denied. Both round-trip the document through HTML,
   and a note's YAML front matter is `---`-delimited — which survives that trip
@@ -44,7 +51,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   use PhoenixKitWeb, :live_view
 
   alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKitKnowledgeBase.{Events, Links, Notes, Paths, Rescan, Vaults}
+  alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Notes, Paths, Rescan, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Note
 
   # Prefix only. The live id is per-note (`editor_id/1`) — see there for why
@@ -592,6 +599,50 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # request is acknowledged and ignored rather than left to crash the LiveView.
   def handle_info({:leaf_insert_request, _payload}, socket), do: {:noreply, socket}
 
+  # Leaf has found `[[…]]` targets on screen and wants to know which of them
+  # exist. Only this module knows that, so the resolution rules that already
+  # govern the stored link index answer here too — same resolver, same
+  # same-folder tie-break — or a link would render as pointing somewhere the
+  # backlinks panel disagrees with.
+  #
+  # Answered only for the open note's editor: the tie-break is relative to the
+  # linking note's folder, so a request from an editor that is no longer open
+  # would be resolved against the wrong folder. `seq` is echoed so the client
+  # can drop an answer a later edit superseded.
+  def handle_info({:leaf_resolve_links, %{editor_id: id, targets: targets, seq: seq}}, socket) do
+    if socket.assigns.note && id == editor_id(socket.assigns.note) do
+      send_update(Leaf,
+        id: id,
+        action: :link_targets,
+        seq: seq,
+        targets: resolve_link_targets(socket, targets)
+      )
+    end
+
+    {:noreply, socket}
+  end
+
+  # A `[[wiki-link]]` was clicked. Leaf deliberately does not navigate — where a
+  # target lives is our question, and an unresolved one goes to the create page
+  # rather than nowhere.
+  #
+  # The target is re-resolved rather than trusting the `href` that came back:
+  # that value was rendered into a page which may be stale, and the same rule
+  # applies here as in `find_trash_entry/2` — a page must not be able to name
+  # the destination.
+  def handle_info({:leaf_link_clicked, %{target: target}}, socket) do
+    vault = socket.assigns.vault
+    from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
+
+    path =
+      case Links.resolve(Links.resolver(vault.uuid), link_key(target), from_folder) do
+        nil -> Paths.new_note(vault.slug, target)
+        note -> Paths.note(vault.slug, note.uuid)
+      end
+
+    {:noreply, push_patch(socket, to: path)}
+  end
+
   # A peer changed the note on screen. There is only one surface now and it may
   # hold unsaved keystrokes, so the change is announced and never applied behind
   # the author's back — `remote_change` raises the banner, the reload is theirs
@@ -617,6 +668,65 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       results: results
     )
   end
+
+  # One resolver for the whole batch — a document full of `[[…]]` must not cost
+  # a query per link.
+  defp resolve_link_targets(socket, targets) do
+    vault = socket.assigns.vault
+    from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
+
+    link_targets(Links.resolver(vault.uuid), vault.slug, from_folder, targets)
+  end
+
+  @doc false
+  # `%{target => %{href:, exists:, title:}}`, which is what Leaf decorates a
+  # `[[…]]` with. Takes a prebuilt resolver rather than a vault, so what a link
+  # renders as can be tested without a database — the same split as
+  # `Links.resolve/3`.
+  @spec link_targets(map(), String.t(), String.t(), [String.t()]) :: map()
+  def link_targets(resolver, slug, from_folder, targets) do
+    Map.new(targets, fn target ->
+      key = link_key(target)
+
+      case Links.resolve(resolver, key, from_folder) do
+        nil ->
+          {target,
+           %{
+             href: Paths.new_note(slug, target),
+             exists: false,
+             # Leaf ships no wording for an unresolved target on purpose — it
+             # is ours to write, about our own idea of what a target is.
+             title: "No note with this title yet — click to create it"
+           }}
+
+        note ->
+          {target,
+           %{
+             href: Paths.note(slug, note.uuid),
+             exists: true,
+             title: link_title(resolver, key, note)
+           }}
+      end
+    end)
+  end
+
+  # A link whose bare title several notes answer to still resolves, but the
+  # author deserves to be told it was guessed at, and which way.
+  defp link_title(resolver, key, note) do
+    case Links.candidate_count(resolver, key) do
+      count when count > 1 ->
+        "#{count} notes share this title — this link resolves to #{note.relative_path}"
+
+      _ ->
+        note.relative_path
+    end
+  end
+
+  # Leaf sends the bare target: the heading anchor and the alias arrive as
+  # separate fields and are already stripped. Normalising it is what makes
+  # "My  Note", "my note" and " My Note " the same note, and it is the same
+  # key the stored link index uses.
+  defp link_key(target), do: Markdown.normalize_title(target)
 
   defp note_suggestions(socket, query) do
     vault_uuid = socket.assigns.vault.uuid
@@ -1522,7 +1632,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         <p class="text-xs text-base-content/50">
           Type <code>[[</code>
           to link a note or <code>#</code>
-          for a tag — ↑↓ to move, Enter to accept. Saves as you write.
+          for a tag — ↑↓ to move, Enter to accept. Ctrl-click a link to follow
+          it. Saves as you write.
         </p>
 
         <.live_component
@@ -1532,6 +1643,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           mode={:hybrid}
           preset={:advanced}
           suggestions={suggestion_configs()}
+          wiki_links={%{resolve: true}}
           deny={[:visual_mode, :html_mode]}
           placeholder="Write in markdown. Link with [[Note title]]."
           height="60vh"
