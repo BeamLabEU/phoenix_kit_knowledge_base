@@ -234,8 +234,12 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
 
       _ ->
         case Notes.index_entry(vault, entry.relative_path, stat, broadcast: false) do
-          {:ok, note} ->
-            Links.resolve_for_note(note)
+          {:ok, _note} ->
+            # No per-file link repair here. `run/1` finishes with
+            # `Links.reindex_vault/1`, which rebuilds every row from scratch, so
+            # anything done per file is overwritten moments later — and the pair
+            # that used to be called is the one every other caller was migrated
+            # off, because an already-resolved link never reconsidered.
             {Map.update!(report, :added, &(&1 + 1)), pool}
 
           {:error, reason} ->
@@ -259,10 +263,8 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
 
     with {:ok, moved} <- result do
       if moved.folder_path != "", do: Notes.index_folder_chain(vault, moved.folder_path)
-      # The name changed, so links to the old one stop resolving and links
-      # waiting for the new one start.
-      Links.unresolve_stale(moved)
-      Links.resolve_for_note(moved)
+      # Same as above: `reindex_vault/1` at the end of the scan is what fixes
+      # the link graph, and it fixes all of it.
       {:ok, moved}
     end
   end
@@ -299,11 +301,17 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
   # path uses too — the two things that can make the index disagree with the
   # directories on disk, so they must agree about how to fix it.
   defp sync_folders(report, vault) do
-    {added, removed} = Notes.sync_folders(vault)
+    case Notes.sync_folders(vault) do
+      {:ok, {added, removed}} ->
+        report
+        |> Map.update!(:folders_added, &(&1 + added))
+        |> Map.update!(:folders_removed, &(&1 + removed))
 
-    report
-    |> Map.update!(:folders_added, &(&1 + added))
-    |> Map.update!(:folders_removed, &(&1 + removed))
+      {:error, reason} ->
+        # The rescan report is the only surface this has. A vault whose
+        # directory cannot be listed must not read as a clean scan.
+        add_error(report, "(folders)", reason)
+    end
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────────

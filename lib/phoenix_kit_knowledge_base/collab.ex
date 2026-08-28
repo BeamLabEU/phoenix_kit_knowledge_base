@@ -14,8 +14,18 @@ defmodule PhoenixKitKnowledgeBase.Collab do
   source of truth anyway. Restarting would only produce an empty room wearing
   the name of a note.
 
-  Rooms stop on their own once the last session leaves; the room writes what it
-  was holding on the way down.
+  ## Rooms do not stop themselves
+
+  They outlive their sessions. Leaf 0.6.0's `{:DOWN, …}` clause drops the
+  departed session from the room's `people` map and returns `{:noreply, …}` —
+  there is no stop, no idle timeout and no hibernate — so a room started for a
+  note stays up, holding that note's full text and its operation log, for the
+  life of the node. Browsing a thousand-note vault would leave a thousand
+  processes behind.
+
+  So closing them is ours: `close_room/1` stops one, and whatever opens a room
+  must close it. `GenServer.stop/1` rather than a kill, because the last thing a
+  room does is write down what it was holding.
 
   ## Why this is in `children/0`
 
@@ -55,6 +65,24 @@ defmodule PhoenixKitKnowledgeBase.Collab do
       {:error, {:already_started, pid}} -> {:ok, pid}
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  @doc """
+  Stop the room for this note, flushing what it holds on the way down.
+
+  Rooms do not stop themselves — see the moduledoc — so whatever opened one is
+  responsible for this. A note nobody has open should not still have a process.
+  """
+  @spec close_room(String.t()) :: :ok
+  def close_room(note_uuid) do
+    case Registry.lookup(@registry, note_uuid) do
+      [{pid, _}] -> GenServer.stop(pid)
+      [] -> :ok
+    end
+  catch
+    # Already going down, or gone between the lookup and the stop. Both mean
+    # what was asked for.
+    :exit, _ -> :ok
   end
 
   @doc "Whether a room is currently open for this note, without starting one."

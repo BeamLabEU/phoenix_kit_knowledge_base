@@ -228,18 +228,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # ── Events: navigation and filtering ──────────────────────────────────────
 
   @impl true
-  def handle_event("select_folder", %{"path" => path}, socket) do
-    selected =
-      case path do
-        "" -> :any
-        "root" -> ""
-        path -> path
-      end
-
-    {:noreply,
-     socket |> assign(:selected_folder, selected) |> assign(:selected_tag, nil) |> load_notes()}
-  end
-
   def handle_event("select_tag", %{"tag" => tag}, socket) do
     tag = if tag == socket.assigns.selected_tag, do: nil, else: tag
     {:noreply, socket |> assign(:selected_tag, tag) |> load_notes()}
@@ -356,10 +344,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   end
 
   # ── Events: folders ───────────────────────────────────────────────────────
-
-  def handle_event("toggle_add_folder", _params, socket) do
-    {:noreply, assign(socket, :adding_folder, not socket.assigns.adding_folder)}
-  end
 
   def handle_event("create_folder", %{"name" => name}, socket) do
     parent =
@@ -552,7 +536,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
            Notes.move_note(socket.assigns.vault, note, folder_path,
              actor_uuid: actor_uuid(socket)
            ) do
-      {:noreply, socket |> load_workspace() |> assign_note_links()}
+      {:noreply, socket |> load_workspace() |> refresh_open_note() |> assign_note_links()}
     else
       _ -> {:noreply, put_flash(socket, :error, "Could not move that note.")}
     end
@@ -591,6 +575,35 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     else
       _ -> {:noreply, put_flash(socket, :error, "Could not move that note to the trash.")}
     end
+  end
+
+  def handle_event("trash_folder", %{"folder_uuid" => uuid}, socket) do
+    with :ok <- require_write(socket),
+         %{} = folder <- Notes.get_folder(socket.assigns.vault.uuid, uuid),
+         {:ok, removed} <- Notes.delete_folder(socket.assigns.vault, folder) do
+      {:noreply,
+       socket
+       |> put_flash(
+         :info,
+         "Moved #{folder.name} and #{removed} #{if removed == 1, do: "note", else: "notes"} to the trash."
+       )
+       |> assign(:selected_folder, :any)
+       |> assign(:note, nil)
+       |> load_workspace()
+       |> push_patch(to: Paths.vault(socket.assigns.vault.slug))}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not move that folder to the trash.")}
+    end
+  end
+
+  # Core's hook also speaks a multi-select vocabulary — a long press selects,
+  # and dragging a selected item moves or deletes the whole selection. This
+  # module has no selection, so these are acknowledged and dropped. They must
+  # still be *matched*: an unhandled `handle_event/3` is a FunctionClauseError,
+  # which takes the LiveView down and loses whatever is in the editor.
+  def handle_event(event, _params, socket)
+      when event in ~w(move_selected_to_folder delete_selected long_press_select) do
+    {:noreply, socket}
   end
 
   # ── Events: rescan ────────────────────────────────────────────────────────
@@ -704,6 +717,18 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
   # ── Editor messages ──────────────────────────────────────────────────────
 
+  # A live-editing session can no longer save: the file moved underneath it. This
+  # is the only warning that exists — Leaf's room records the conflict, stops
+  # writing and tells nobody — so it is shown to everyone in the vault,
+  # including whoever caused it, and deliberately does not check `own?`.
+  def handle_info({:kb_note_conflict, %{note_uuid: note_uuid}}, socket) do
+    if socket.assigns.note && socket.assigns.note.uuid == note_uuid do
+      {:noreply, assign(socket, :conflict, true)}
+    else
+      {:noreply, socket}
+    end
+  end
+
   def handle_info({:leaf_changed, %{markdown: markdown} = payload}, socket) do
     case save_decision(payload, socket.assigns.note, socket.assigns.content) do
       :save -> {:noreply, socket |> assign(:content, markdown) |> save_content(markdown)}
@@ -780,6 +805,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # that value was rendered into a page which may be stale, and the same rule
   # applies here as in `find_trash_entry/2` — a page must not be able to name
   # the destination.
+  # A floor under every message that reaches this process. Leaf adds messages
+  # between versions, `Leaf.Collab` sends several more, and an unmatched
+  # `handle_info/2` takes the LiveView down with the editor sitting right
+  # there — which is a worse outcome than ignoring something we do not
+  # understand. Logged rather than silent, so a new message is discoverable
+  # instead of merely absent.
+  #
+  # Placed after every real clause: it matches anything.
   def handle_info({:leaf_link_clicked, %{target: target}}, socket) do
     vault = socket.assigns.vault
     from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
@@ -791,6 +824,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       end
 
     {:noreply, push_patch(socket, to: path)}
+  end
+
+  def handle_info(message, socket) do
+    require Logger
+
+    Logger.debug("[knowledge_base] unhandled message in VaultLive: #{inspect(message)}")
+
+    {:noreply, socket}
   end
 
   # A peer changed the note on screen. There is only one surface now and it may
@@ -947,7 +988,25 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         do: assign(socket, :selected_folder, to),
         else: socket
 
-    socket |> load_workspace() |> assign_note_links()
+    socket |> load_workspace() |> refresh_open_note() |> assign_note_links()
+  end
+
+  # Re-read the open note's row after something moved it. Only the row: the
+  # buffer on screen is unchanged and must not be touched, which is what
+  # separates this from `reload_open_note/1`.
+  #
+  # Without it `@note.relative_path` still names the old file, `save_content/3`
+  # writes against a path that is gone, and every autosave is refused with "this
+  # note's file is gone from disk" until the reader navigates away. The
+  # `kb_note_saved` broadcast cannot rescue it either — it comes from this same
+  # pid, so `Events.own?/1` drops it.
+  defp refresh_open_note(%{assigns: %{note: nil}} = socket), do: socket
+
+  defp refresh_open_note(socket) do
+    case Notes.get_note(socket.assigns.vault.uuid, socket.assigns.note.uuid) do
+      nil -> socket
+      note -> assign(socket, :note, note)
+    end
   end
 
   defp move_error(:refuse_descendant), do: "A folder cannot be moved inside itself."
@@ -1146,14 +1205,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # `"root"`.
   #
   # The whole vault, not the current filter: the tree shows what is there, the
-  # way Obsidian's file list does. That is a second query per load, and it is
-  # the thing to change first if a vault ever grows past what a sidebar can
-  # usefully show.
+  # way Obsidian's file list does. Three columns rather than whole rows —
+  # loading `content` for every note would pull the entire vault's markdown
+  # through on every note click, folder click and peer save, to keep two
+  # fields.
   defp tree_items(vault, folders) do
     uuid_by_path = Map.new(folders, &{&1.relative_path, &1.uuid})
 
     vault.uuid
-    |> Notes.list_notes(folder_path: :any, order: :title)
+    |> Notes.list_titles()
     |> Enum.group_by(
       fn note -> Map.get(uuid_by_path, note.folder_path || "", "root") end,
       # Plain maps rather than the schema: the component reads `:id` off each
@@ -1378,7 +1438,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           vault={@vault}
           tags={@tags}
           unresolved={@unresolved}
-          note_count={@note_count}
           selected_folder={@selected_folder}
           selected_tag={@selected_tag}
           directory={@vault.directory}
@@ -1443,7 +1502,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   attr :vault, :any, required: true
   attr :tags, :list, required: true
   attr :unresolved, :list, required: true
-  attr :note_count, :integer, required: true
   attr :selected_folder, :any, required: true
   attr :selected_tag, :any, required: true
   attr :search_query, :string, required: true
@@ -1632,9 +1690,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         <%!--
           Core's explorer renames a folder but cannot delete one, and exposes no
           slot to add a control per row — so deletion lives here, acting on
-          whichever folder is selected. Dragging a folder to the trash is not an
-          option either: core's hook refuses folder drags on a trash target,
-          because MediaBrowser has no soft-delete for folders. This vault does.
+          whichever folder is selected. Dragging a folder onto Trash works too
+          (`trash_folder`); this is the affordance for someone who would rather
+          click than drag.
         --%>
         <div
           :if={@can_write and not is_nil(current_folder(@folders, @selected_folder))}

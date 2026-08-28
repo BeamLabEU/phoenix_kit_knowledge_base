@@ -122,6 +122,13 @@ that app; what matters here:
   `fragment("? ILIKE ? ESCAPE '\\'", …)`.
 - Uppercase names are **aliases**, not constants. `REPO = MyApp.Repo` is a
   failing match against `Elixir.REPO`.
+- `Notes.update_content/4` and `index_entry/4` take `broadcast:` and
+  `resolver:`. A caller writing on somebody else's behalf (the collaboration
+  store, flushing from a room) must pass `broadcast: false` — `:kb_note_saved`
+  carries the *writer's* pid as origin, so a room's write is nobody's own and
+  every session with that note open raises "changed by someone else" against
+  its own typing. A caller indexing many notes must pass a shared `resolver:`,
+  or each call rebuilds one by scanning every note in the vault.
 - `Notes.index_entry/4` finds the row to update **by path**, which is the wrong
   key when the path is what changed. A rename or move must pass
   `existing: note`, or it finds nothing at the new path, inserts a second row,
@@ -155,6 +162,21 @@ that app; what matters here:
   since 2.13.14, so this is now belt-and-braces rather than load-bearing — it
   still matters for anyone running an older core.
 
+**LiveView**
+
+- `VaultLive` has a catch-all `handle_info/2` and must keep one. Leaf adds
+  messages between versions and `Leaf.Collab` sends several; an unmatched
+  clause is a `FunctionClauseError` that takes the view down with the editor in
+  it.
+- Core's `MediaDragDrop` hook speaks a vocabulary wider than this module uses —
+  `move_selected_to_folder`, `delete_selected`, `long_press_select` come from a
+  multi-select feature we do not have. They are matched and dropped on purpose:
+  unhandled, they crash the LiveView.
+- Anything that **moves the open note** must re-read its row (`refresh_open_note/1`).
+  `@note.relative_path` is what `save_content/3` writes against, and the
+  `:kb_note_saved` broadcast cannot fix it — it comes from the same pid, so
+  `Events.own?/1` drops it.
+
 **HEEx**
 
 - `:if={@x}` accepts nil truthiness, but `@x and …` **raises** on nil. Use
@@ -180,6 +202,10 @@ that app; what matters here:
   rule plus a paragraph, destroying every property.
 - Leaf's JS is lazy-loaded from jsDelivr by core's vendored `phoenix_kit.js`, not
   bundled. It needs network and a permissive `script-src`.
+- **A `Leaf.Collab.Room` never stops.** Leaf 0.6.0's `{:DOWN, …}` clause drops
+  the session and returns `{:noreply, …}` — no stop, no idle timeout — so a room
+  outlives everyone in it and holds the note's full text for the life of the
+  node. Whatever opens one must call `Collab.close_room/1`.
 - **A `Leaf.Collab.Room` tells nobody when a flush is refused as a conflict.**
   It sets `conflict: true` on its own state, stops writing, keeps answering
   `:ok` from `flush_now/1`, and discards the document in `terminate/2`. So a

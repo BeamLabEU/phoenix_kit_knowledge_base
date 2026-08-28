@@ -27,6 +27,8 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   import Ecto.Query
 
+  require Logger
+
   alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Storage}
   alias PhoenixKitKnowledgeBase.Schemas.{Folder, Note, Vault}
 
@@ -177,12 +179,22 @@ defmodule PhoenixKitKnowledgeBase.Notes do
          affected <- notes_under(vault.uuid, from),
          old_keys <- Enum.flat_map(affected, &Links.keys_for/1),
          :ok <- Storage.move_folder(vault.directory, from, target) do
-      new_keys = reindex_moved_notes(vault, affected, from, target)
+      # One resolver for the whole subtree. Without it `index_entry/4` builds a
+      # fresh one per note — a full scan of every note in the vault, thirty
+      # times over for a folder of thirty notes.
+      resolver = Links.resolver(vault.uuid)
+      {new_keys, failed} = reindex_moved_notes(vault, affected, from, target, resolver)
       sync_folders(vault)
       Links.reresolve_keys(vault.uuid, old_keys ++ new_keys)
       Events.vault_changed(vault.uuid, :folder)
 
-      {:ok, get_folder_by_path(vault.uuid, target)}
+      # The bytes moved; the index did not entirely follow. Reported rather than
+      # hidden behind a success — a rescan repairs it, and the caller is the
+      # only thing that can say so.
+      case failed do
+        [] -> {:ok, get_folder_by_path(vault.uuid, target)}
+        paths -> {:error, {:reindex_incomplete, paths}}
+      end
     end
   end
 
@@ -204,16 +216,31 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     )
   end
 
-  defp reindex_moved_notes(vault, notes, from, target) do
-    Enum.flat_map(notes, fn note ->
+  # Returns `{keys, failed_paths}`. A note that cannot be re-indexed is *not*
+  # dropped quietly: the directory has already moved, so its row still points at
+  # a path that no longer exists, and `sync_folders/1` is about to delete the
+  # folder row it lived under — the note disappears from the tree and every save
+  # against it is refused. Invariant 1 says the index is disposable, not that it
+  # may be wrong.
+  defp reindex_moved_notes(vault, notes, from, target, resolver) do
+    Enum.reduce(notes, {[], []}, fn note, {keys, failed} ->
       new_path = swap_prefix(note.relative_path, from, target)
 
       with {:ok, stat} <- Storage.stat_note(vault.directory, new_path),
            {:ok, moved} <-
-             index_entry(vault, new_path, stat, existing: note, broadcast: false) do
-        Links.keys_for(moved)
+             index_entry(vault, new_path, stat,
+               existing: note,
+               broadcast: false,
+               resolver: resolver
+             ) do
+        {Links.keys_for(moved) ++ keys, failed}
       else
-        _ -> []
+        error ->
+          Logger.error(
+            "[knowledge_base] could not reindex #{new_path} after moving #{from}: #{inspect(error)}"
+          )
+
+          {keys, [new_path | failed]}
       end
     end)
   end
@@ -229,9 +256,15 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   Make the folder index agree with the directories on disk.
 
   Used after a folder move and by the rescan, which is the only other thing
-  that can make the two disagree. Returns `{added, removed}`.
+  that can make the two disagree.
+
+  `{:error, reason}` when the directory cannot be listed — a vault that lost
+  read permission or was unmounted. That has to reach the rescan report:
+  answering `{0, 0}` there would report "everything already up to date" for a
+  vault nothing can read.
   """
-  @spec sync_folders(Vault.t()) :: {non_neg_integer(), non_neg_integer()}
+  @spec sync_folders(Vault.t()) ::
+          {:ok, {non_neg_integer(), non_neg_integer()}} | {:error, term()}
   def sync_folders(%Vault{} = vault) do
     case Storage.list_folders(vault.directory) do
       {:ok, on_disk} ->
@@ -256,10 +289,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
             count
           end
 
-        {added, removed}
+        {:ok, {added, removed}}
 
-      {:error, _reason} ->
-        {0, 0}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -390,6 +423,26 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   def fetch_with_vault(_note_uuid), do: :error
 
+  @doc """
+  Every note's uuid, title and folder, for building the sidebar tree.
+
+  Three columns rather than whole rows: the tree needs a label and something to
+  drag, and `content` is the entire markdown of every note in the vault. This
+  runs on every note click, folder click, tag click, drag and peer save.
+  """
+  @spec list_titles(String.t()) :: [
+          %{uuid: String.t(), title: String.t(), folder_path: String.t()}
+        ]
+  def list_titles(vault_uuid) do
+    repo().all(
+      from(n in Note,
+        where: n.vault_uuid == ^vault_uuid,
+        order_by: [asc: n.title, asc: n.relative_path],
+        select: %{uuid: n.uuid, title: n.title, folder_path: n.folder_path}
+      )
+    )
+  end
+
   @doc "Fetch a note by its path within the vault, or `nil`."
   @spec get_note_by_path(String.t(), String.t()) :: Note.t() | nil
   def get_note_by_path(vault_uuid, relative_path) do
@@ -463,7 +516,13 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   def update_content(%Vault{} = vault, %Note{} = note, content, opts \\ []) do
     with :ok <- check_not_stale(vault, note, opts),
          {:ok, stat} <- Storage.write_note(vault.directory, note.relative_path, content) do
-      index_entry(vault, note.relative_path, stat, updated_by: opts[:actor_uuid])
+      index_entry(vault, note.relative_path, stat,
+        updated_by: opts[:actor_uuid],
+        # Forwarded, not swallowed: a caller writing on somebody else's behalf
+        # — the collaboration store, flushing from a room process — needs to
+        # suppress the per-note announcement and say something truer itself.
+        broadcast: Keyword.get(opts, :broadcast, true)
+      )
     end
   end
 
@@ -587,6 +646,9 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   Pass `broadcast: false` during a bulk reindex; a rescan announces itself once
   at the end rather than once per file.
 
+  Pass `resolver:` when indexing several notes in one pass; otherwise each call
+  builds its own, which is a scan of every note in the vault per note indexed.
+
   Pass `existing: note` when the file has just *moved* and the row to update is
   therefore not the one at `relative_path`. Without it a rename looks up the
   new path, finds nothing, and inserts a second row — leaving the note listed
@@ -624,7 +686,9 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       # Fold the folder into the index so an empty-until-now directory shows up
       # in the sidebar the moment it holds a note.
       if note.folder_path != "", do: index_folder_chain(vault, note.folder_path)
-      Links.reindex_note(note)
+      # A caller reindexing many notes at once passes one resolver rather than
+      # letting each rebuild a full-vault one.
+      Links.reindex_note(note, opts[:resolver])
       if Keyword.get(opts, :broadcast, true), do: Events.note_saved(note)
       {:ok, note}
     end

@@ -46,11 +46,17 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
   end
 
   @impl true
+  # Gated for the same reason as the mutations below: this returns names and
+  # email addresses for every matching account in the install, so a revoked
+  # owner with the page still open could go on enumerating the user table.
+  # Reading is not exempt from a check that exists because roles change.
   def handle_event("search", %{"value" => query}, socket) do
     candidates =
-      case String.trim(query) do
-        "" -> []
-        trimmed -> Vaults.search_candidates(socket.assigns.vault, trimmed)
+      with :ok <- require_manage(socket),
+           trimmed when trimmed != "" <- String.trim(query) do
+        Vaults.search_candidates(socket.assigns.vault, trimmed)
+      else
+        _ -> []
       end
 
     {:noreply, socket |> assign(:query, query) |> assign(:candidates, candidates)}

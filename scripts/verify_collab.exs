@@ -97,6 +97,49 @@ results = check.(results, "the link graph was re-derived", link_target, "Target"
 Room.adopt(room, sid, edited <> "\nmore\n")
 results = check.(results, "a second flush is not a conflict with our own last write", Room.flush_now(room), :ok)
 
+# --- a note edited outside the app opens, and its first flush succeeds ---
+# `load/1` reads from disk on purpose, so the room holds bytes the row does not
+# describe. Without re-indexing on the way in, the first flush compares disk
+# against a stale row and conflicts — in exactly the case reading from disk
+# exists to serve.
+{:ok, drifted} = Notes.create_note(vault, %{"title" => "Drifted", "content" => "indexed\n"}, user.uuid)
+drifted_file = Path.join(dir, "Drifted.md")
+File.write!(drifted_file, "# Changed in vim\n")
+
+{:ok, drift_room} = Collab.room_for(Notes.get_note(vault.uuid, drifted.uuid))
+results = check.(results, "a room opens a note that changed on disk", Room.snapshot(drift_room).document, "# Changed in vim\n")
+
+drift_sid = "drift-session"
+Room.join(drift_room, drift_sid, self(), %{name: "Verifier"})
+Room.adopt(drift_room, drift_sid, "# Changed in vim, then here\n")
+results = check.(results, "and its first flush is not a conflict", Room.flush_now(drift_room), :ok)
+results = check.(results, "the flush landed", File.read!(drifted_file), "# Changed in vim, then here\n")
+
+# --- a flush announces the vault, not the note ---
+# `:kb_note_saved` from a room pid is nobody's own write, so every session with
+# that note open would raise "changed by someone else" against its own typing.
+Room.adopt(drift_room, drift_sid, "# Once more\n")
+Room.flush_now(drift_room)
+
+saw =
+  receive do
+    {:kb_note_saved, _} -> :note_saved
+    {:kb_vault_changed, _} -> :vault_changed
+  after
+    500 -> :nothing
+  end
+
+results = check.(results, "a flush broadcasts a vault change, not a note save", saw, :vault_changed)
+
+GenServer.stop(drift_room)
+
+# --- rooms have to be stopped; they do not stop themselves ---
+{:ok, closing} = Collab.room_for(Notes.get_note(vault.uuid, drifted.uuid))
+Collab.close_room(drifted.uuid)
+Process.sleep(100)
+results = check.(results, "close_room/1 stops it", Process.alive?(closing), false)
+results = check.(results, "and the registry lets go", Collab.room_open?(drifted.uuid), false)
+
 # --- an edit behind the room's back is a conflict, not an overwrite ---
 outside = "# Edited outside the app\n"
 File.write!(file, outside)

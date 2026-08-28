@@ -71,9 +71,21 @@ results = check.(results, "the bare link still resolves through the move", Map.g
 # refusals
 f2 = Notes.get_folder_by_path(vault.uuid, "archive")
 results = check.(results, "moving a folder into its own subtree is refused", Notes.relocate_folder(vault, f2, "archive/inner"), {:error, :refuse_descendant})
-results = check.(results, "moving onto an existing path is refused", Notes.relocate_folder(vault, f2, "archive/sub") |> elem(1), :refuse_descendant)
 results = check.(results, "a no-op move is refused", Notes.relocate_folder(vault, f2, "archive"), {:error, :unchanged})
 results = check.(results, "escaping the vault is refused", Notes.relocate_folder(vault, f2, "../escape"), {:error, :unsafe_path})
+
+# Moving *onto* something that already exists. This needs a folder that is not
+# an ancestor of the target, or `refuse_descendant` fires first and the check
+# passes for the wrong reason — which is what it used to do, leaving the guard
+# that stops a move from clobbering an existing directory untested.
+{:ok, _} = Notes.create_folder(vault, "", "other")
+other = Notes.get_folder_by_path(vault.uuid, "other")
+results = check.(results, "moving onto an existing path is refused", Notes.relocate_folder(vault, other, "archive"), {:error, :target_exists})
+
+# The vault root, in the target position. `Storage.move_folder/3` refuses it in
+# either position; a folder row for the root does not exist, so this is the
+# reachable half.
+results = check.(results, "moving onto the vault root is refused", Notes.relocate_folder(vault, other, ""), {:error, :refuse_vault_root})
 results = check.(results, "nothing was damaged by the refusals", paths.(), disk.())
 
 cleanup.()

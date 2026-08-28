@@ -51,6 +51,15 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
       # Read from disk, not from the indexed copy. The file is the source of
       # truth, and a note changed outside the app since it was last indexed
       # should open as what it actually says.
+      #
+      # And when it *has* changed, the row is re-indexed here rather than left
+      # behind. `flush/2`'s guard compares the file against the row, so a room
+      # holding the newer bytes while the row still describes the older ones
+      # would conflict on its very first flush — in exactly the case this
+      # disk-first read exists to serve, which would make the feature useless
+      # for a vault people also edit in vim.
+      reindex_if_drifted(vault, note, stat)
+
       {:ok, %{document: stat.content, revision: 0}}
     else
       _ ->
@@ -58,6 +67,16 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
         # falls back to the `initial_content` it was given.
         :error
     end
+  end
+
+  defp reindex_if_drifted(vault, note, stat) do
+    if stat.hash != note.content_hash do
+      # Broadcast: other sessions are looking at a stale sidebar entry for a
+      # note that changed on disk, and this is the moment we found out.
+      Notes.index_entry(vault, note.relative_path, stat)
+    end
+
+    :ok
   end
 
   @impl true
@@ -72,8 +91,19 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
   end
 
   defp write(vault, note, document) do
-    case Notes.update_content(vault, note, document) do
+    # `broadcast: false`, then one vault-level message instead. `index_entry/4`
+    # would announce `:kb_note_saved` with this room's pid as the origin, which
+    # is nobody's own write — so every session with that note open would fail
+    # the `own?` check, see a hash it does not hold (it is mid-edit), and raise
+    # the "changed by someone else, reload?" banner against its own typing,
+    # every couple of seconds. Accepting that reload pushes `set_content` into
+    # the live buffer and discards unflushed keystrokes.
+    #
+    # A vault-level change still refreshes sidebars and counts, which is what
+    # sessions not in this room actually need.
+    case Notes.update_content(vault, note, document, broadcast: false) do
       {:ok, _note} ->
+        Events.vault_changed(vault.uuid, :note)
         :ok
 
       {:error, :stale} ->
