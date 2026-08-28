@@ -207,6 +207,19 @@ defmodule PhoenixKitKnowledgeBase do
 
   @impl PhoenixKit.Module
   @doc """
+  The registry and dynamic supervisor behind live editing.
+
+  Core starts these under its own supervisor, so the host needs no setup. They
+  start whether or not this module is enabled — `children/0` is collected
+  statically, before anything can ask the database — but an empty registry and
+  an idle `DynamicSupervisor` cost nothing until somebody opens a note.
+
+  See `PhoenixKitKnowledgeBase.Collab`.
+  """
+  def children, do: PhoenixKitKnowledgeBase.Collab.children()
+
+  @impl PhoenixKit.Module
+  @doc """
   Config for the admin Modules page.
 
   Only `enabled?/0` — this runs on every render of that page, and counting

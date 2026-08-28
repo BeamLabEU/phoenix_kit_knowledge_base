@@ -35,11 +35,14 @@ lib/phoenix_kit_knowledge_base/
   rescan.ex         reconcile index with disk; rename detection by hash
   vaults.ex         vault CRUD, membership, the whole access model
   events.ex         per-vault PubSub
+  collab.ex         a Leaf.Collab.Room per note; started from `children/0`
+  collab/store.ex   where a live document goes: Notes -> disk -> index
   migrations.ex     versioned coordinator (the host's migration calls into this)
   schemas/          five Ecto schemas, all `use PhoenixKit.SchemaPrefix`
   web/              three LiveViews
 scripts/smoke_http.exs                   renders every page as a logged-in user
 scripts/verify_links.exs                 link resolution against a real database
+scripts/verify_collab.exs                live editing: what a room writes and refuses
 dev_docs/                                date-prefixed working notes (not shipped)
 ```
 
@@ -50,7 +53,7 @@ Three layers, and **none of them alone is sufficient**:
 | Layer | Command | Catches | Blind to |
 |---|---|---|---|
 | Unit | `mix test` | parsing, path safety, resolution, changesets | anything needing a DB or a rendered page |
-| Live DB | `scripts/verify_links.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link actually points at | templates, client-side state |
+| Live DB | `scripts/verify_links.exs`, `scripts/verify_collab.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link points at, what a room writes | templates, client-side state |
 | HTTP | `scripts/smoke_http.exs` | template crashes, dead renders | client-side JS behaviour |
 
 **`curl` against an admin route proves nothing.** It is never authenticated, so
@@ -142,6 +145,14 @@ that app; what matters here:
   rule plus a paragraph, destroying every property.
 - Leaf's JS is lazy-loaded from jsDelivr by core's vendored `phoenix_kit.js`, not
   bundled. It needs network and a permissive `script-src`.
+- **A `Leaf.Collab.Room` tells nobody when a flush is refused as a conflict.**
+  It sets `conflict: true` on its own state, stops writing, keeps answering
+  `:ok` from `flush_now/1`, and discards the document in `terminate/2`. So a
+  note edited outside the app mid-session silently stops saving and the
+  session's work is lost on the way out. `Collab.Store` broadcasts
+  `Events.note_conflict/2` before returning, which is the only warning that
+  exists — do not remove it without checking whether Leaf has started sending
+  one. Written up in `dev_docs/2026-08-28-leaf-collab-conflict-silent.md`.
 - A suggestion trigger with no `:token` inherits Leaf's default,
   `[\p{L}\p{N}_-]`, which closes the popup at the first space — so `[[` never
   completes a title with a space in it, and `#` never completes `#project/alpha`.

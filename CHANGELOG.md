@@ -26,6 +26,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns. No gesture reaches it. Written up for upstream in
   `dev_docs/2026-08-28-leaf-wikilink-click-bug.md`; the outgoing-links panel
   remains the way to navigate.
+- **Live editing groundwork.** A `Leaf.Collab.Room` per note, started on demand
+  under core's supervisor via the `children/0` callback, and a
+  `Leaf.Collab.Store` implementation that persists through
+  `Notes.update_content/4` rather than writing the file directly — so a
+  collaborative edit re-derives the title, front matter, tags, link graph and
+  search vector, which `Leaf.Collab.Store.File` would have left stale. The
+  editor is not wired to it yet.
+- **`scripts/verify_collab.exs`** — what a room writes and what it refuses,
+  against a real database and filesystem.
 - **`scripts/verify_links.exs`** — link resolution checked against a real
   database: what a link points at after every operation that can change the
   answer. `mix test` is deliberately database-free and `smoke_http.exs` only

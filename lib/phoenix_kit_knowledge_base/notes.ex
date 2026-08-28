@@ -237,6 +237,35 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     Ecto.Query.CastError -> nil
   end
 
+  @doc """
+  A note and the vault holding it, from the note uuid alone.
+
+  For a caller that has only the uuid and no vault in hand — the collaboration
+  store, whose document id is the note uuid, running inside a room process that
+  never saw a LiveView's assigns. One query rather than two, because it runs on
+  every flush.
+  """
+  @spec fetch_with_vault(String.t()) :: {:ok, Note.t(), Vault.t()} | :error
+  def fetch_with_vault(note_uuid) when is_binary(note_uuid) do
+    from(n in Note,
+      join: v in Vault,
+      on: v.uuid == n.vault_uuid,
+      where: n.uuid == ^note_uuid,
+      select: {n, v}
+    )
+    |> repo().one()
+    |> case do
+      {%Note{} = note, %Vault{} = vault} -> {:ok, note, vault}
+      nil -> :error
+    end
+  rescue
+    # A malformed uuid is "no such note", not a crash — the id reaches here from
+    # a room that may outlive the note it was started for.
+    Ecto.Query.CastError -> :error
+  end
+
+  def fetch_with_vault(_note_uuid), do: :error
+
   @doc "Fetch a note by its path within the vault, or `nil`."
   @spec get_note_by_path(String.t(), String.t()) :: Note.t() | nil
   def get_note_by_path(vault_uuid, relative_path) do

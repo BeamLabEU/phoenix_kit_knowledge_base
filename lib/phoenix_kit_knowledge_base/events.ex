@@ -18,10 +18,11 @@ defmodule PhoenixKitKnowledgeBase.Events do
   ## What this is not
 
   This keeps *separate* notes in sync and tells you when the note you are
-  reading changed underneath you. It is **not** collaborative editing: two
-  people typing into the same note at the same time still resolve
-  last-writer-wins, caught by the stale-write guard rather than merged. Merging
-  concurrent keystrokes needs a CRDT and a different editor integration.
+  reading changed underneath you. Merging two people's keystrokes into one note
+  is `Leaf.Collab`'s job, not this module's — see
+  `PhoenixKitKnowledgeBase.Collab`. The one place the two meet is
+  `note_conflict/2`, because a live-editing session that can no longer save has
+  no other way to say so.
   """
 
   alias PhoenixKit.PubSubHelper
@@ -31,6 +32,7 @@ defmodule PhoenixKitKnowledgeBase.Events do
           {:kb_note_saved, map()}
           | {:kb_note_deleted, map()}
           | {:kb_vault_changed, map()}
+          | {:kb_note_conflict, map()}
 
   @doc "The topic carrying every change in one vault."
   @spec vault_topic(String.t()) :: String.t()
@@ -68,6 +70,24 @@ defmodule PhoenixKitKnowledgeBase.Events do
   @spec vault_changed(String.t(), atom()) :: :ok
   def vault_changed(vault_uuid, reason \\ :structure) do
     broadcast(vault_uuid, {:kb_vault_changed, %{reason: reason}})
+  end
+
+  @doc """
+  Announce that a live-editing session can no longer save.
+
+  Sent when the collaboration store refuses a flush because the file moved
+  underneath the session. Leaf's room records the conflict, stops writing and
+  tells nobody — not the sessions, not the caller of `flush_now/1`, which
+  answers `:ok` regardless — so people go on typing into a document that will
+  never be written and is discarded when the room stops. This is the only
+  warning anyone gets; see `PhoenixKitKnowledgeBase.Collab.Store`.
+
+  Carries no origin check on the receiving side: everyone in that note needs to
+  know, including whoever caused it.
+  """
+  @spec note_conflict(String.t(), String.t()) :: :ok
+  def note_conflict(vault_uuid, note_uuid) do
+    broadcast(vault_uuid, {:kb_note_conflict, %{note_uuid: note_uuid}})
   end
 
   @doc """
