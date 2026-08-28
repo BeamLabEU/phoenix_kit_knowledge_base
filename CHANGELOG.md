@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   subtree answered to is re-resolved so path-qualified `[[folder/Note]]` links
   follow. Refuses the vault root, an existing target, a move into its own
   subtree, and anything outside the vault.
+- **Notes and folders in one tree**, as Obsidian shows them. Core's
+  `FolderExplorer` gained leaf items in 2.13.14; this passes every note keyed by
+  the folder holding it and renders each as a link. The flat note list now
+  appears only under a tag filter — without one it was a second copy of the
+  tree.
 - **The sidebar now uses core's `FolderExplorer`** — guide lines, expand and
   collapse, inline rename — and core's `MediaDragDrop` hook, so notes and
   folders can be dragged into folders and notes onto Trash. Both come from

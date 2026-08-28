@@ -131,18 +131,29 @@ that app; what matters here:
 
 **Core's components**
 
+> ⚠️ **The sidebar needs `phoenix_kit` ≥ 2.13.14**, for `FolderExplorer`'s
+> `items` attr and `:item` slot — that is what puts notes in the tree. The
+> declared constraint is still `~> 2.0` because 2.13.14 is not published yet;
+> **bump it the moment it is**, or a Hex install resolves an older core and the
+> sidebar raises on an undefined slot. Until then, local work needs
+> `PHOENIX_KIT_PATH=../phoenix_kit`.
+
 - `PhoenixKitWeb.Components.FolderExplorer` is **not** in core's default
   imports — `use PhoenixKitWeb, :live_view` brings in `Components.Core.*` only.
   Import it explicitly.
-- It reads `folder.color` unconditionally, and our `Folder` has no such column.
-  A struct without the key raises `KeyError` the moment a vault has one folder.
-  `Folder` carries a **virtual** `:color` for this and nothing else.
 - Every control is `phx-target={@myself}`, which is a LiveComponent contract.
   From a plain LiveView pass `myself={nil}`: HEEx omits a nil attribute, so the
   events arrive at the LiveView instead.
 - Its event names are MediaBrowser's (`navigate_folder`, `toggle_folder_expand`,
   `rename_folder`, …) and cannot be renamed by a consumer. We implement its
   vocabulary rather than fork the component.
+- Leaves are keyed by folder uuid with `"root"` for the top level, and each item
+  needs an `:id` — that is what becomes `data-draggable-file`. `tree_items/2`
+  builds the map; it loads **every** note in the vault, which is the first thing
+  to change if a vault outgrows what a sidebar can show.
+- `Folder` carries a **virtual** `:color`. Core reads it through `Map.get/2`
+  since 2.13.14, so this is now belt-and-braces rather than load-bearing — it
+  still matters for anyone running an older core.
 
 **HEEx**
 

@@ -134,6 +134,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
      |> assign(:folder_tree, [])
      |> assign(:folders, [])
      |> assign(:notes, [])
+     |> assign(:tree_items, %{})
      |> assign(:tags, [])
      |> assign(:unresolved, [])
      |> assign(:note_count, 0)
@@ -1135,7 +1136,30 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
     notes = Notes.list_notes(vault.uuid, folder_path: folder, tag: tag, order: :title)
 
-    assign(socket, :notes, notes)
+    socket
+    |> assign(:notes, notes)
+    |> assign(:tree_items, tree_items(vault, socket.assigns.folders))
+  end
+
+  # Every note in the vault, grouped by the uuid of the folder holding it, which
+  # is how core's explorer keys its leaves. Notes at the vault root go under
+  # `"root"`.
+  #
+  # The whole vault, not the current filter: the tree shows what is there, the
+  # way Obsidian's file list does. That is a second query per load, and it is
+  # the thing to change first if a vault ever grows past what a sidebar can
+  # usefully show.
+  defp tree_items(vault, folders) do
+    uuid_by_path = Map.new(folders, &{&1.relative_path, &1.uuid})
+
+    vault.uuid
+    |> Notes.list_notes(folder_path: :any, order: :title)
+    |> Enum.group_by(
+      fn note -> Map.get(uuid_by_path, note.folder_path || "", "root") end,
+      # Plain maps rather than the schema: the component reads `:id` off each
+      # item for `data-draggable-file`, and a Note has a `uuid`.
+      fn note -> %{id: note.uuid, label: note.title} end
+    )
   end
 
   defp load_sidebar_counts(socket) do
@@ -1365,6 +1389,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           trash_open={@trash_open}
           trash={@trash}
           folders={@folders}
+          tree_items={@tree_items}
           expanded_folders={@expanded_folders}
           sidebar_collapsed={@sidebar_collapsed}
           renaming_folder={@renaming_folder}
@@ -1429,6 +1454,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   attr :trash_open, :boolean, required: true
   attr :trash, :list, required: true
   attr :folders, :list, required: true
+  attr :tree_items, :any, required: true
   attr :expanded_folders, :any, required: true
   attr :sidebar_collapsed, :boolean, required: true
   attr :renaming_folder, :any, required: true
@@ -1585,7 +1611,23 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           sidebar_collapsed={@sidebar_collapsed}
           show_create={@can_write}
           show_trash={false}
-        />
+          items={@tree_items}
+        >
+          <:item :let={entry}>
+            <.link
+              patch={Paths.note(@vault.slug, entry.id)}
+              class={[
+                "block text-sm truncate py-1",
+                if(@note && @note.uuid == entry.id,
+                  do: "font-medium text-primary",
+                  else: "text-base-content/70"
+                )
+              ]}
+            >
+              {entry.label}
+            </.link>
+          </:item>
+        </.folder_explorer>
 
         <%!--
           Core's explorer renames a folder but cannot delete one, and exposes no
@@ -1621,9 +1663,18 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         </form>
       </div>
 
-      <section :if={is_nil(@search_results) and not @trash_open} class="space-y-1">
+      <%!--
+        Only for a tag filter now. Without one the tree above already lists every
+        note inside its folder, which is what the folders-and-notes-together
+        layout was for — a second flat copy of the same thing underneath it is
+        noise.
+      --%>
+      <section
+        :if={is_nil(@search_results) and not @trash_open and not is_nil(@selected_tag)}
+        class="space-y-1"
+      >
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          Notes{if @selected_tag, do: " · ##{@selected_tag}", else: ""}
+          Notes · #{@selected_tag}
         </h2>
         <p :if={@notes == []} class="text-sm text-base-content/50 italic">Nothing here yet.</p>
         <ul class="space-y-0.5">
