@@ -43,6 +43,7 @@ lib/phoenix_kit_knowledge_base/
 scripts/smoke_http.exs                   renders every page as a logged-in user
 scripts/verify_links.exs                 link resolution against a real database
 scripts/verify_collab.exs                live editing: what a room writes and refuses
+scripts/verify_folder_move.exs           moving a folder, and the four refusals
 dev_docs/                                date-prefixed working notes (not shipped)
 ```
 
@@ -53,13 +54,21 @@ Three layers, and **none of them alone is sufficient**:
 | Layer | Command | Catches | Blind to |
 |---|---|---|---|
 | Unit | `mix test` | parsing, path safety, resolution, changesets | anything needing a DB or a rendered page |
-| Live DB | `scripts/verify_links.exs`, `scripts/verify_collab.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link points at, what a room writes | templates, client-side state |
+| Live DB | `scripts/verify_links.exs`, `scripts/verify_collab.exs`, `scripts/verify_folder_move.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link points at, what a room writes, folder moves | templates, client-side state |
 | HTTP | `scripts/smoke_http.exs` | template crashes, dead renders | client-side JS behaviour |
 
 **`curl` against an admin route proves nothing.** It is never authenticated, so
 it always answers `302` to the login page and no template runs. A
 `BadBooleanError` in the sidebar was reported green by exactly that check for
 several rounds. Use `scripts/smoke_http.exs`, which forges a session cookie.
+
+**The smoke fixture has a folder and a note inside it, deliberately.** A
+`KeyError` on `folder.color` rendered green here for exactly as long as the
+fixture vault had no folders: the sidebar tree was empty, so nothing in it ran.
+A page that renders is not a page that rendered *something* — `smoke_http.exs`
+now asserts the markers the sidebar needs (`kb-folder-explorer`,
+`data-draggable-file`, `data-drop-folder`, `data-wikilinks`) rather than only
+the status code.
 
 **Nothing here can verify the editor.** Leaf is client-side; its DOM state and
 message timing are outside anything this repo can assert. Two of the day-one
@@ -119,6 +128,21 @@ that app; what matters here:
   and leaves the note listed twice with every backlink still on the stale one.
 - `~r{…}` closes at the first `}`, so `\p{L}` breaks it. `~r/…/` interpolates,
   so a literal `#` must be `\#`.
+
+**Core's components**
+
+- `PhoenixKitWeb.Components.FolderExplorer` is **not** in core's default
+  imports — `use PhoenixKitWeb, :live_view` brings in `Components.Core.*` only.
+  Import it explicitly.
+- It reads `folder.color` unconditionally, and our `Folder` has no such column.
+  A struct without the key raises `KeyError` the moment a vault has one folder.
+  `Folder` carries a **virtual** `:color` for this and nothing else.
+- Every control is `phx-target={@myself}`, which is a LiveComponent contract.
+  From a plain LiveView pass `myself={nil}`: HEEx omits a nil attribute, so the
+  events arrive at the LiveView instead.
+- Its event names are MediaBrowser's (`navigate_folder`, `toggle_folder_expand`,
+  `rename_folder`, …) and cannot be renamed by a consumer. We implement its
+  vocabulary rather than fork the component.
 
 **HEEx**
 

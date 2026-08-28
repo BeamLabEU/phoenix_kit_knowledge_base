@@ -38,7 +38,7 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
   import Ecto.Query
 
   alias PhoenixKitKnowledgeBase.{Events, Links, Notes, Storage}
-  alias PhoenixKitKnowledgeBase.Schemas.{Folder, Note, Vault}
+  alias PhoenixKitKnowledgeBase.Schemas.{Note, Vault}
 
   require Logger
 
@@ -295,37 +295,15 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
 
   # ── Folders ───────────────────────────────────────────────────────────────
 
+  # Folder rows are reconciled by `Notes.sync_folders/1`, which the folder-move
+  # path uses too — the two things that can make the index disagree with the
+  # directories on disk, so they must agree about how to fix it.
   defp sync_folders(report, vault) do
-    case Storage.list_folders(vault.directory) do
-      {:ok, on_disk} ->
-        indexed = repo().all(from(f in Folder, where: f.vault_uuid == ^vault.uuid))
-        indexed_paths = MapSet.new(indexed, & &1.relative_path)
-        disk_paths = MapSet.new(on_disk)
+    {added, removed} = Notes.sync_folders(vault)
 
-        added =
-          disk_paths
-          |> MapSet.difference(indexed_paths)
-          |> Enum.count(&match?({:ok, _}, Notes.index_folder_chain(vault, &1)))
-
-        gone = indexed |> Enum.filter(&(not MapSet.member?(disk_paths, &1.relative_path)))
-
-        removed =
-          if gone == [] do
-            0
-          else
-            {count, _} =
-              repo().delete_all(from(f in Folder, where: f.uuid in ^Enum.map(gone, & &1.uuid)))
-
-            count
-          end
-
-        report
-        |> Map.update!(:folders_added, &(&1 + added))
-        |> Map.update!(:folders_removed, &(&1 + removed))
-
-      {:error, reason} ->
-        add_error(report, "(folders)", reason)
-    end
+    report
+    |> Map.update!(:folders_added, &(&1 + added))
+    |> Map.update!(:folders_removed, &(&1 + removed))
   end
 
   # ── Helpers ───────────────────────────────────────────────────────────────

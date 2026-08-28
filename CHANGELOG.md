@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns. No gesture reaches it. Written up for upstream in
   `dev_docs/2026-08-28-leaf-wikilink-click-bug.md`; the outgoing-links panel
   remains the way to navigate.
+- **Folder move and rename**, which the vault had no way to do — the README
+  said "`mv` the directory and rescan". `Storage.move_folder/3` plus
+  `Notes.relocate_folder/3`: one operation, because a rename and a reparent are
+  one operation on a filesystem. Notes underneath keep their uuids and therefore
+  their backlinks, empty subdirectories move with the rest, and every key the
+  subtree answered to is re-resolved so path-qualified `[[folder/Note]]` links
+  follow. Refuses the vault root, an existing target, a move into its own
+  subtree, and anything outside the vault.
+- **The sidebar now uses core's `FolderExplorer`** — guide lines, expand and
+  collapse, inline rename — and core's `MediaDragDrop` hook, so notes and
+  folders can be dragged into folders and notes onto Trash. Both come from
+  `phoenix_kit`, so this module still ships no JavaScript.
 - **Live editing groundwork.** A `Leaf.Collab.Room` per note, started on demand
   under core's supervisor via the `children/0` callback, and a
   `Leaf.Collab.Store` implementation that persists through

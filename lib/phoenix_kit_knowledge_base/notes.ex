@@ -145,6 +145,130 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     end
   end
 
+  @doc """
+  Move or rename a folder, and reindex everything underneath it.
+
+  One function, because on a filesystem it is one operation: renaming
+  `research` and moving it into `2026/` are both a directory rename.
+
+  The reindex is the part worth reading. Every note under the folder gets a new
+  `relative_path`, and each is re-indexed **naming the row to update** — the
+  same `existing:` that `move_and_reindex/4` needs, and for the same reason: a
+  lookup by the new path finds nothing, inserts a second row, and strands every
+  backlink on the old one. Moving a folder of thirty notes would do that thirty
+  times.
+
+  Then the link graph. Path-qualified links (`[[research/Ideas]]`) name a path
+  that no longer exists, and the same link written against the new path starts
+  resolving — so every key the subtree answered to, before and after, is
+  re-resolved together.
+
+  Folder rows are reconciled against the disk rather than rewritten from the
+  old prefix, so empty subdirectories move with the rest instead of vanishing
+  from the sidebar until the next rescan.
+  """
+  @spec relocate_folder(Vault.t(), Folder.t(), String.t()) ::
+          {:ok, Folder.t()} | {:error, term()}
+  def relocate_folder(%Vault{} = vault, %Folder{} = folder, target_path) do
+    from = folder.relative_path
+
+    with {:ok, target} <- safe_path(target_path),
+         :ok <- refuse_noop_move(from, target),
+         affected <- notes_under(vault.uuid, from),
+         old_keys <- Enum.flat_map(affected, &Links.keys_for/1),
+         :ok <- Storage.move_folder(vault.directory, from, target) do
+      new_keys = reindex_moved_notes(vault, affected, from, target)
+      sync_folders(vault)
+      Links.reresolve_keys(vault.uuid, old_keys ++ new_keys)
+      Events.vault_changed(vault.uuid, :folder)
+
+      {:ok, get_folder_by_path(vault.uuid, target)}
+    end
+  end
+
+  defp refuse_noop_move(from, from), do: {:error, :unchanged}
+  defp refuse_noop_move(_from, _target), do: :ok
+
+  # The folder itself and everything below it. Compared with a trailing slash so
+  # `researching` is not swept up with `research`.
+  defp notes_under(vault_uuid, folder_path) do
+    prefix = folder_path <> "/"
+
+    repo().all(
+      from(n in Note,
+        where:
+          n.vault_uuid == ^vault_uuid and
+            (n.folder_path == ^folder_path or
+               like(n.folder_path, ^(escape_like(prefix) <> "%")))
+      )
+    )
+  end
+
+  defp reindex_moved_notes(vault, notes, from, target) do
+    Enum.flat_map(notes, fn note ->
+      new_path = swap_prefix(note.relative_path, from, target)
+
+      with {:ok, stat} <- Storage.stat_note(vault.directory, new_path),
+           {:ok, moved} <-
+             index_entry(vault, new_path, stat, existing: note, broadcast: false) do
+        Links.keys_for(moved)
+      else
+        _ -> []
+      end
+    end)
+  end
+
+  defp swap_prefix(path, from, target) do
+    case String.replace_prefix(path, from <> "/", "") do
+      ^path -> path
+      rest -> Path.join(target, rest)
+    end
+  end
+
+  @doc """
+  Make the folder index agree with the directories on disk.
+
+  Used after a folder move and by the rescan, which is the only other thing
+  that can make the two disagree. Returns `{added, removed}`.
+  """
+  @spec sync_folders(Vault.t()) :: {non_neg_integer(), non_neg_integer()}
+  def sync_folders(%Vault{} = vault) do
+    case Storage.list_folders(vault.directory) do
+      {:ok, on_disk} ->
+        indexed = repo().all(from(f in Folder, where: f.vault_uuid == ^vault.uuid))
+        indexed_paths = MapSet.new(indexed, & &1.relative_path)
+        disk_paths = MapSet.new(on_disk)
+
+        added =
+          disk_paths
+          |> MapSet.difference(indexed_paths)
+          |> Enum.count(&match?({:ok, _}, index_folder_chain(vault, &1)))
+
+        gone = Enum.filter(indexed, &(not MapSet.member?(disk_paths, &1.relative_path)))
+
+        removed =
+          if gone == [] do
+            0
+          else
+            {count, _} =
+              repo().delete_all(from(f in Folder, where: f.uuid in ^Enum.map(gone, & &1.uuid)))
+
+            count
+          end
+
+        {added, removed}
+
+      {:error, _reason} ->
+        {0, 0}
+    end
+  end
+
+  @doc "Fetch a folder by its path inside the vault, or `nil`."
+  @spec get_folder_by_path(String.t(), String.t()) :: Folder.t() | nil
+  def get_folder_by_path(vault_uuid, relative_path) do
+    repo().get_by(Folder, vault_uuid: vault_uuid, relative_path: relative_path)
+  end
+
   @doc false
   # Index a directory and every ancestor of it, ignoring ones already present.
   @spec index_folder_chain(Vault.t(), String.t()) :: {:ok, Folder.t()} | {:error, term()}

@@ -50,8 +50,12 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   """
   use PhoenixKitWeb, :live_view
 
+  # Not in core's default imports — `use PhoenixKitWeb, :live_view` brings in
+  # `Components.Core.*` only, so the folder explorer has to be asked for.
+  import PhoenixKitWeb.Components.FolderExplorer
+
   alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Notes, Paths, Rescan, Vaults}
+  alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Notes, Paths, Rescan, Storage, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Note
 
   # Prefix only. The live id is per-note (`editor_id/1`) — see there for why
@@ -115,6 +119,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
      |> assign(:search_query, "")
      |> assign(:search_results, nil)
      |> assign(:adding_folder, false)
+     # Core's FolderExplorer state. `expanded_folders` holds folder uuids, not
+     # paths — that is the component's contract, and it is what its own
+     # `active_path_uuids/2` walks.
+     |> assign(:expanded_folders, MapSet.new())
+     |> assign(:sidebar_collapsed, false)
+     |> assign(:renaming_folder, nil)
+     |> assign(:renaming_source, nil)
+     |> assign(:renaming_text, "")
      |> assign(:new_title, "")
      |> assign(:note_error, nil)
      |> assign(:can_write, false)
@@ -443,6 +455,140 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
+  # ── Events: core's folder explorer ────────────────────────────────────────
+  #
+  # These names are MediaBrowser's, because the component was written for it and
+  # does not let a consumer rename them. Implementing its vocabulary is cheaper
+  # than changing core, and it keeps the two consumers speaking one language.
+
+  def handle_event("navigate_folder", %{"folder-uuid" => uuid}, socket) do
+    case folder_path_for(socket, uuid) do
+      nil -> {:noreply, socket}
+      path -> {:noreply, select_folder_path(socket, path)}
+    end
+  end
+
+  def handle_event("navigate_root", _params, socket) do
+    {:noreply, select_folder_path(socket, "")}
+  end
+
+  def handle_event("navigate_view_all", _params, socket) do
+    {:noreply, select_folder_path(socket, :any)}
+  end
+
+  def handle_event("toggle_folder_expand", %{"folder-uuid" => uuid}, socket) do
+    expanded = socket.assigns.expanded_folders
+
+    expanded =
+      if MapSet.member?(expanded, uuid),
+        do: MapSet.delete(expanded, uuid),
+        else: MapSet.put(expanded, uuid)
+
+    {:noreply, assign(socket, :expanded_folders, expanded)}
+  end
+
+  def handle_event("toggle_sidebar", _params, socket) do
+    {:noreply, assign(socket, :sidebar_collapsed, not socket.assigns.sidebar_collapsed)}
+  end
+
+  def handle_event("open_new_folder_modal", _params, socket) do
+    {:noreply, assign(socket, :adding_folder, not socket.assigns.adding_folder)}
+  end
+
+  def handle_event("toggle_trash_filter", _params, socket) do
+    handle_event("toggle_trash", %{}, socket)
+  end
+
+  # ── Events: folder rename ─────────────────────────────────────────────────
+
+  def handle_event("start_rename_folder", %{"folder-uuid" => uuid} = params, socket) do
+    if require_write(socket) == :ok do
+      {:noreply,
+       socket
+       |> assign(:renaming_folder, uuid)
+       |> assign(:renaming_source, params["source"])
+       |> assign(:renaming_text, folder_name_for(socket, uuid))}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("rename_folder_input", %{"name" => name}, socket) do
+    {:noreply, assign(socket, :renaming_text, name)}
+  end
+
+  def handle_event("cancel_rename_folder", _params, socket) do
+    {:noreply, cancel_rename(socket)}
+  end
+
+  def handle_event("rename_folder", %{"folder_uuid" => uuid, "name" => name}, socket) do
+    # A rename is a move to a sibling path: same parent, new last segment. One
+    # operation on the filesystem, so one operation here.
+    with :ok <- require_write(socket),
+         %{} = folder <- Notes.get_folder(socket.assigns.vault.uuid, uuid),
+         {:ok, target} <- sibling_path(folder.relative_path, name),
+         {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
+      {:noreply, socket |> cancel_rename() |> reselect_folder(folder.relative_path, target)}
+    else
+      {:error, :unchanged} -> {:noreply, cancel_rename(socket)}
+      {:error, reason} -> {:noreply, rename_failed(socket, reason)}
+      _ -> {:noreply, rename_failed(socket, :not_found)}
+    end
+  end
+
+  # ── Events: drag and drop ─────────────────────────────────────────────────
+  #
+  # Pushed by core's `MediaDragDrop` hook, which this module gets for free by
+  # naming it in `phx-hook` — it ships no JavaScript of its own.
+
+  def handle_event("move_file_to_folder", %{"file_uuid" => note_uuid} = params, socket) do
+    folder = Map.get(params, "folder_uuid", "")
+
+    with :ok <- require_write(socket),
+         %Note{} = note <- Notes.get_note(socket.assigns.vault.uuid, note_uuid),
+         {:ok, _moved} <-
+           Notes.move_note(socket.assigns.vault, note, folder, actor_uuid: actor_uuid(socket)) do
+      {:noreply, socket |> load_workspace() |> assign_note_links()}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not move that note.")}
+    end
+  end
+
+  def handle_event("move_folder_to_folder", %{"folder_uuid" => uuid} = params, socket) do
+    target_parent = Map.get(params, "target_uuid", "")
+
+    with :ok <- require_write(socket),
+         %{} = folder <- Notes.get_folder(socket.assigns.vault.uuid, uuid),
+         {:ok, parent_path} <- target_parent_path(socket, target_parent),
+         target <- Path.join(parent_path, folder.name),
+         {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
+      {:noreply, reselect_folder(socket, folder.relative_path, target)}
+    else
+      {:error, :unchanged} -> {:noreply, socket}
+      {:error, reason} -> {:noreply, put_flash(socket, :error, move_error(reason))}
+      _ -> {:noreply, put_flash(socket, :error, "Could not move that folder.")}
+    end
+  end
+
+  def handle_event("trash_file", %{"file_uuid" => note_uuid}, socket) do
+    with :ok <- require_write(socket),
+         %Note{} = note <- Notes.get_note(socket.assigns.vault.uuid, note_uuid),
+         {:ok, _} <- Notes.delete_note(socket.assigns.vault, note) do
+      socket =
+        if socket.assigns.note && socket.assigns.note.uuid == note_uuid do
+          socket
+          |> assign(:note, nil)
+          |> push_patch(to: Paths.vault(socket.assigns.vault.slug))
+        else
+          socket
+        end
+
+      {:noreply, socket |> put_flash(:info, "Note moved to the trash.") |> load_workspace()}
+    else
+      _ -> {:noreply, put_flash(socket, :error, "Could not move that note to the trash.")}
+    end
+  end
+
   # ── Events: rescan ────────────────────────────────────────────────────────
 
   # Gated on write, not because a rescan changes a file — it does not — but
@@ -739,6 +885,86 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # "My  Note", "my note" and " My Note " the same note, and it is the same
   # key the stored link index uses.
   defp link_key(target), do: Markdown.normalize_title(target)
+
+  defp select_folder_path(socket, selected) do
+    socket |> assign(:selected_folder, selected) |> assign(:selected_tag, nil) |> load_notes()
+  end
+
+  defp cancel_rename(socket) do
+    socket
+    |> assign(:renaming_folder, nil)
+    |> assign(:renaming_source, nil)
+    |> assign(:renaming_text, "")
+  end
+
+  defp rename_failed(socket, reason) do
+    socket |> cancel_rename() |> put_flash(:error, move_error(reason))
+  end
+
+  defp folder_name_for(socket, uuid) do
+    case Notes.get_folder(socket.assigns.vault.uuid, uuid) do
+      nil -> ""
+      folder -> folder.name
+    end
+  end
+
+  # A rename keeps the parent and replaces the last segment. The name goes
+  # through the same validation a note title does — a folder is a directory, and
+  # the characters that break a path or a `[[link]]` break it here too.
+  defp sibling_path(relative_path, name) do
+    with {:ok, clean} <- Storage.validate_filename(name) do
+      case Path.dirname(relative_path) do
+        "." -> {:ok, clean}
+        parent -> {:ok, Path.join(parent, clean)}
+      end
+    end
+  end
+
+  defp target_parent_path(_socket, target) when target in [nil, "", "root"], do: {:ok, ""}
+
+  defp target_parent_path(socket, uuid) do
+    case folder_path_for(socket, uuid) do
+      nil -> {:error, :not_found}
+      path -> {:ok, path}
+    end
+  end
+
+  # Keep the selection on the folder that just moved rather than dropping the
+  # user back to the whole vault.
+  defp reselect_folder(socket, from, to) do
+    socket =
+      if socket.assigns.selected_folder == from,
+        do: assign(socket, :selected_folder, to),
+        else: socket
+
+    socket |> load_workspace() |> assign_note_links()
+  end
+
+  defp move_error(:refuse_descendant), do: "A folder cannot be moved inside itself."
+  defp move_error(:target_exists), do: "Something is already there."
+  defp move_error(:refuse_vault_root), do: "The vault root cannot be moved."
+  defp move_error(:unsafe_path), do: "That name is not allowed."
+  defp move_error(:not_found), do: "That folder no longer exists."
+  defp move_error(reason), do: error_message(reason)
+
+  # The explorer wants the Folder struct for the selected path, or nil for the
+  # root and the all-notes view — it reads `.uuid` off it and compares.
+  defp current_folder(_folders, :any), do: nil
+  defp current_folder(_folders, ""), do: nil
+
+  defp current_folder(folders, path) when is_binary(path) do
+    Enum.find(folders, &(&1.relative_path == path))
+  end
+
+  defp current_folder(_folders, _selected), do: nil
+
+  # The explorer names folders by uuid; everything else here names them by path.
+  defp folder_path_for(socket, uuid) do
+    case Notes.get_folder(socket.assigns.vault.uuid, uuid) do
+      nil -> nil
+      folder -> folder.relative_path
+    end
+  end
 
   defp note_suggestions(socket, query) do
     vault_uuid = socket.assigns.vault.uuid
@@ -1076,6 +1302,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           <button
             type="button"
             phx-click="toggle_trash"
+            data-drop-trash="true"
             class={["btn btn-sm", if(@trash_open, do: "btn-active", else: "btn-ghost")]}
           >
             <.icon name="hero-trash" class="w-4 h-4" /> Trash
@@ -1128,6 +1355,12 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           can_write={@can_write}
           trash_open={@trash_open}
           trash={@trash}
+          folders={@folders}
+          expanded_folders={@expanded_folders}
+          sidebar_collapsed={@sidebar_collapsed}
+          renaming_folder={@renaming_folder}
+          renaming_source={@renaming_source}
+          renaming_text={@renaming_text}
         />
 
         <main class="min-w-0">
@@ -1186,10 +1419,28 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   attr :directory, :string, required: true
   attr :trash_open, :boolean, required: true
   attr :trash, :list, required: true
+  attr :folders, :list, required: true
+  attr :expanded_folders, :any, required: true
+  attr :sidebar_collapsed, :boolean, required: true
+  attr :renaming_folder, :any, required: true
+  attr :renaming_source, :any, required: true
+  attr :renaming_text, :string, required: true
 
   defp sidebar(assigns) do
     ~H"""
-    <aside class="space-y-4 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto lg:pr-1">
+    <%!--
+      Core's drag-and-drop hook, used as it ships. It finds
+      `[data-draggable-file]` and `[data-draggable-folder]` inside this element,
+      wires the drop targets, and pushes `move_file_to_folder`,
+      `move_folder_to_folder` and `trash_file` back here. Because it is core's
+      hook, already registered on `window.PhoenixKitHooks`, this module still
+      ships no JavaScript.
+    --%>
+    <aside
+      id="kb-sidebar"
+      phx-hook="MediaDragDrop"
+      class="space-y-4 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto lg:pr-1"
+    >
       <p class="text-xs text-base-content/40 break-all" title="These notes are files on disk">
         <.icon name="hero-folder-open" class="w-3 h-3 inline-block" />
         {@directory}
@@ -1293,17 +1544,59 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         </ul>
       </section>
 
-      <section :if={is_nil(@search_results) and not @trash_open} class="space-y-2">
-        <div class="flex items-center justify-between">
-          <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Folders</h2>
+      <%!--
+        Core's folder explorer, used as it ships. It brings the tree, expand /
+        collapse, guide lines, inline rename, the All-notes and Vault-root
+        entries, and the `data-drop-folder` / `data-draggable-folder` attributes
+        that core's `MediaDragDrop` hook reads — so drag-and-drop costs this
+        module no JavaScript of its own.
+
+        `myself={nil}` renders no `phx-target`, which sends every event to this
+        LiveView. The component is written for a LiveComponent, and this is the
+        one concession needed to use it from a plain one.
+
+        `show_trash={false}` because the Trash button lives in the page header
+        here; it carries `data-drop-trash` itself, and the hook looks for that
+        across the whole document rather than inside the sidebar.
+      --%>
+      <div :if={is_nil(@search_results) and not @trash_open} class="space-y-2">
+        <.folder_explorer
+          id="kb-folder-explorer"
+          myself={nil}
+          class="block"
+          folder_tree={@folder_tree}
+          current_folder={current_folder(@folders, @selected_folder)}
+          expanded_folders={@expanded_folders}
+          scope_folder_name={@vault.name}
+          renaming_folder={@renaming_folder}
+          renaming_source={@renaming_source}
+          renaming_text={@renaming_text}
+          filter_trash={@trash_open}
+          file_view={if @selected_folder == :any, do: "all", else: nil}
+          sidebar_collapsed={@sidebar_collapsed}
+          show_create={@can_write}
+          show_trash={false}
+        />
+
+        <%!--
+          Core's explorer renames a folder but cannot delete one, and exposes no
+          slot to add a control per row — so deletion lives here, acting on
+          whichever folder is selected. Dragging a folder to the trash is not an
+          option either: core's hook refuses folder drags on a trash target,
+          because MediaBrowser has no soft-delete for folders. This vault does.
+        --%>
+        <div
+          :if={@can_write and not is_nil(current_folder(@folders, @selected_folder))}
+          class="flex justify-end"
+        >
           <button
-            :if={@can_write}
             type="button"
-            phx-click="toggle_add_folder"
-            class="btn btn-ghost btn-xs"
-            aria-label="New folder"
+            phx-click="delete_folder"
+            phx-value-uuid={current_folder(@folders, @selected_folder).uuid}
+            data-confirm={"Move “#{current_folder(@folders, @selected_folder).name}” to the trash, including every note and subfolder inside it?"}
+            class="btn btn-ghost btn-xs text-error"
           >
-            <.icon name="hero-folder-plus" class="w-4 h-4" />
+            <.icon name="hero-trash" class="w-3 h-3" /> Delete folder
           </button>
         </div>
 
@@ -1317,44 +1610,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           />
           <button type="submit" class="btn btn-xs btn-primary">Add</button>
         </form>
-
-        <ul class="space-y-0.5 text-sm">
-          <li>
-            <button
-              type="button"
-              phx-click="select_folder"
-              phx-value-path=""
-              class={[
-                "w-full text-left rounded px-2 py-1 hover:bg-base-200 flex justify-between",
-                @selected_folder == :any && "bg-base-200 font-medium"
-              ]}
-            >
-              <span>All notes</span>
-              <span class="text-xs text-base-content/50">{@note_count}</span>
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              phx-click="select_folder"
-              phx-value-path="root"
-              class={[
-                "w-full text-left rounded px-2 py-1 hover:bg-base-200",
-                @selected_folder == "" && "bg-base-200 font-medium"
-              ]}
-            >
-              Vault root
-            </button>
-          </li>
-        </ul>
-
-        <.folder_nodes
-          nodes={@folder_tree}
-          depth={0}
-          selected={@selected_folder}
-          can_write={@can_write}
-        />
-      </section>
+      </div>
 
       <section :if={is_nil(@search_results) and not @trash_open} class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
@@ -1365,6 +1621,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           <li :for={item <- @notes}>
             <.link
               patch={Paths.note(@vault.slug, item.uuid)}
+              data-draggable-file={@can_write && item.uuid}
               class={[
                 "block rounded px-2 py-1 text-sm truncate hover:bg-base-200",
                 @note && @note.uuid == item.uuid && "bg-base-200 font-medium"
@@ -1414,51 +1671,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         </ul>
       </section>
     </aside>
-    """
-  end
-
-  attr :nodes, :list, required: true
-  attr :depth, :integer, required: true
-  attr :selected, :any, required: true
-  attr :can_write, :boolean, required: true
-
-  defp folder_nodes(assigns) do
-    ~H"""
-    <ul :if={@nodes != []} class="space-y-0.5 text-sm">
-      <li :for={node <- @nodes}>
-        <div class="group flex items-center gap-1">
-          <button
-            type="button"
-            phx-click="select_folder"
-            phx-value-path={node.folder.relative_path}
-            style={"padding-left: #{0.5 + @depth * 0.75}rem"}
-            class={[
-              "flex-1 text-left rounded px-2 py-1 hover:bg-base-200 truncate",
-              @selected == node.folder.relative_path && "bg-base-200 font-medium"
-            ]}
-          >
-            <.icon name="hero-folder" class="w-3 h-3 inline-block mr-1 opacity-60" />{node.folder.name}
-          </button>
-          <button
-            :if={@can_write}
-            type="button"
-            phx-click="delete_folder"
-            phx-value-uuid={node.folder.uuid}
-            data-confirm={"Move “#{node.folder.name}” to the trash, including every note and subfolder inside it?"}
-            class="btn btn-ghost btn-xs opacity-0 group-hover:opacity-100"
-            aria-label="Delete folder"
-          >
-            <.icon name="hero-trash" class="w-3 h-3 text-error" />
-          </button>
-        </div>
-        <.folder_nodes
-          nodes={node.children}
-          depth={@depth + 1}
-          selected={@selected}
-          can_write={@can_write}
-        />
-      </li>
-    </ul>
     """
   end
 

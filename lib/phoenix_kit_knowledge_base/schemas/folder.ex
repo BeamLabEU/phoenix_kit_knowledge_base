@@ -27,6 +27,15 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Folder do
     field(:relative_path, :string)
     field(:name, :string)
 
+    # Never stored and never set. Core's `FolderExplorer` reads `folder.color`
+    # unconditionally to tint its icons, and a struct without the key raises
+    # `KeyError` the moment a vault has one folder — which no database-free test
+    # can see, because it needs a rendered page and a folder to render. Virtual,
+    # so it costs a column of nothing and the component gets its `nil`.
+    #
+    # Remove this if core ever reads the colour with `Map.get/3`.
+    field(:color, :string, virtual: true)
+
     belongs_to(:vault, Vault, foreign_key: :vault_uuid, references: :uuid, type: UUIDv7)
 
     timestamps(type: :utc_datetime_usec)

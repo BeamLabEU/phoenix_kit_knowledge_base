@@ -334,6 +334,67 @@ defmodule PhoenixKitKnowledgeBase.Storage do
     end
   end
 
+  @doc """
+  Move a folder, which is how both renaming and reparenting are done.
+
+  There is one operation here because on a filesystem there is one operation:
+  renaming `research` to `archive` and moving it into `2026/` are both a
+  directory rename, and pretending otherwise would mean two code paths that can
+  disagree.
+
+  Four things are refused rather than attempted:
+
+    * the vault root, in either position — moving it means moving the vault
+    * a target that already exists, so nothing is merged or clobbered
+    * moving a folder **into its own subtree**, which orphans the directory
+      being moved along with everything under it
+    * anything outside the vault, by the same containment check as every other
+      path here
+
+  The caller reindexes afterwards. This only moves bytes.
+  """
+  @spec move_folder(String.t(), String.t(), String.t()) :: :ok | {:error, term()}
+  def move_folder(directory, from, to) do
+    with {:ok, source} <- vault_child(directory, from),
+         {:ok, target} <- vault_child(directory, to),
+         root = Path.expand(vault_path(directory)),
+         :ok <- refuse_vault_root(source, target, root),
+         :ok <- refuse_descendant(source, target),
+         false <- File.exists?(target),
+         :ok <- File.mkdir_p(Path.dirname(target)) do
+      File.rename(source, target)
+    else
+      true -> {:error, :target_exists}
+      {:error, reason} -> {:error, reason}
+      error -> error
+    end
+  end
+
+  defp refuse_vault_root(source, target, root) do
+    if Path.expand(source) == root or Path.expand(target) == root do
+      {:error, :refuse_vault_root}
+    else
+      :ok
+    end
+  end
+
+  # `research` -> `research/old` renames a directory into a path that only
+  # exists inside the directory being renamed. `File.rename/2` reports this as
+  # `:einval` on Linux, but the message says nothing useful and the check is one
+  # line — and on a filesystem that allowed it, the result would be unreachable.
+  #
+  # Compared with a trailing separator so `researching` is not read as being
+  # inside `research`.
+  defp refuse_descendant(source, target) do
+    source_prefix = Path.expand(source) <> "/"
+
+    if String.starts_with?(Path.expand(target) <> "/", source_prefix) do
+      {:error, :refuse_descendant}
+    else
+      :ok
+    end
+  end
+
   @doc "Read a note's raw markdown."
   @spec read_note(String.t(), String.t()) :: {:ok, String.t()} | {:error, term()}
   def read_note(directory, relative_path) do

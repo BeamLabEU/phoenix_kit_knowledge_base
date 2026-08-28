@@ -63,6 +63,10 @@ File.rm_rf(Path.join(Storage.root(), "users/#{Storage.email_slug(user.email)}/sm
 {:ok, vault} = Vaults.create(%{"name" => "Smoke", "slug" => "smoke"}, scope, :user)
 {:ok, note} = Notes.create_note(vault, %{"title" => "Hello", "content" => "Links to [[Nowhere]]"}, user.uuid)
 {:ok, trashed} = Notes.create_note(vault, %{"title" => "Trashed", "content" => "x"}, user.uuid)
+# A note in a folder, so the sidebar actually renders a tree node. Without one
+# the folder tree is empty and every mistake inside it is invisible — which is
+# how a `KeyError` on `folder.color` rendered green here.
+{:ok, _nested} = Notes.create_note(vault, %{"title" => "Nested", "folder_path" => "research", "content" => "y"}, user.uuid)
 {:ok, _} = Notes.delete_note(vault, trashed)
 
 check = fn label, path, expect ->
@@ -98,7 +102,38 @@ check = fn label, path, expect ->
   problem == nil
 end
 
+# Some failures are not a 500: a component can render the wrong thing, or an
+# attribute the client depends on can silently stop being emitted. These assert
+# the markers that have to be in the HTML for the sidebar to work at all.
+body_check = fn label, path, needles ->
+  resp =
+    Req.get!(base_url <> path,
+      headers: [cookie: session_key <> "=#{cookie}"], redirect: false, retry: false)
+
+  body = to_string(resp.body)
+  missing = Enum.reject(needles, &String.contains?(body, &1))
+
+  IO.puts(
+    "#{if missing == [], do: "ok  ", else: "FAIL"}  #{label}" <>
+      if(missing == [], do: "", else: "  (missing: #{inspect(missing)})")
+  )
+
+  missing == []
+end
+
+vault_url = "/en/admin/knowledge-base/smoke"
+
 results = [
+  body_check.("folder tree renders", vault_url, ["kb-folder-explorer", "research"]),
+  body_check.("drag-drop hook attached", vault_url, ["phx-hook=\"MediaDragDrop\"", "kb-sidebar"]),
+  body_check.("folders drag and receive", vault_url, ["data-draggable-folder", "data-drop-folder"]),
+  body_check.("notes drag", vault_url, ["data-draggable-file"]),
+  body_check.("trash receives", vault_url, ["data-drop-trash"]),
+  body_check.(
+    "wiki-link resolution requested",
+    vault_url <> "/notes/#{note.uuid}",
+    ["data-wikilinks=\"true\"", "data-wikilinks-resolve=\"true\""]
+  ),
   check.("vault list", "/en/admin/knowledge-base", :ok),
   check.("vault workspace", "/en/admin/knowledge-base/smoke", :ok),
   check.("open note", "/en/admin/knowledge-base/smoke/notes/#{note.uuid}", :ok),
