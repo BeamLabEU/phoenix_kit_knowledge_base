@@ -719,30 +719,20 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # A link whose bare title several notes answer to still resolves, but the
   # author deserves to be told it was guessed at, and which way.
   #
-  # The gesture rides along because this tooltip is the only thing attached to
-  # the link itself. In an editable surface a plain click has to place the
-  # caret — Obsidian's rule, and Leaf's default — so the link does not open and
-  # hybrid mode reveals its markdown source instead. That reads as a broken
-  # link unless something says otherwise, and hovering the link is where
-  # somebody puzzled by it will look.
-  defp link_title(resolver, key, note, can_write?) do
+  # The destination rides along because this tooltip is the only thing attached
+  # to the link itself, and it is where somebody puzzled by a link will look.
+  defp link_title(resolver, key, note, _can_write?) do
     case Links.candidate_count(resolver, key) do
       count when count > 1 ->
-        "#{count} notes share this title — this link resolves to #{note.relative_path}." <>
-          " #{open_gesture(can_write?)}"
+        "#{count} notes share this title — this link resolves to #{note.relative_path}"
 
       _ ->
-        "#{note.relative_path} — #{open_gesture(can_write?)}"
+        note.relative_path
     end
   end
 
-  defp missing_title(true), do: "No note with this title yet — Ctrl/Cmd-click to create it"
+  defp missing_title(true), do: "No note with this title yet — click to create it"
   defp missing_title(false), do: "No note with this title yet"
-
-  # A read-only surface has no caret competing for the click, so Leaf follows a
-  # plain one there regardless of the setting.
-  defp open_gesture(true), do: "Ctrl/Cmd-click to open"
-  defp open_gesture(false), do: "click to open"
 
   # Leaf sends the bare target: the heading anchor and the alias arrive as
   # separate fields and are already stripped. Normalising it is what makes
@@ -1654,9 +1644,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         <p class="text-xs text-base-content/50">
           Type <code>[[</code>
           to link a note or <code>#</code>
-          for a tag — ↑↓ to move, Enter to accept. <strong>Ctrl/Cmd-click</strong>
-          a link to open it; a plain click puts the caret in it to edit, as in
-          Obsidian. Saves as you write.
+          for a tag — ↑↓ to move, Enter to accept. Click a link to open it.
+          Saves as you write.
         </p>
 
         <.live_component
@@ -1666,7 +1655,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           mode={:hybrid}
           preset={:advanced}
           suggestions={suggestion_configs()}
-          wiki_links={%{resolve: true}}
+          wiki_links={%{resolve: true, follow: :click}}
           deny={[:visual_mode, :html_mode]}
           placeholder="Write in markdown. Link with [[Note title]]."
           height="60vh"

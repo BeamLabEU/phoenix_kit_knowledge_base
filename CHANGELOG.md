@@ -15,12 +15,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders as pointing somewhere the backlinks panel disagrees with. An
   ambiguous title still resolves and now says so on hover, naming the note it
   picked. An unresolved target is styled distinctly and points at the create
-  page. Ctrl/Cmd-click follows while editing — a plain click has to place the
-  caret, as in Obsidian, and hybrid mode then shows the link's markdown source
-  — so the hover tooltip on every link says which gesture opens it. A click in
-  a read-only vault follows on its own, and says so. Leaf never navigates: the
-  target is re-resolved on the server rather than trusting the href the page
-  was rendered with.
+  page, and the hover tooltip names the note a link resolved to. Leaf never
+  navigates: the target is re-resolved on the server rather than trusting the
+  href the page was rendered with.
+
+  Configured `follow: :click`, matching Obsidian's Live Preview. **Following a
+  link does not work yet**, through no fault of the configuration: hybrid's
+  source swap runs off `selectionchange`, which a mouse press fires before
+  `click`, so Leaf's handler finds the link's span already replaced and
+  returns. No gesture reaches it. Written up for upstream in
+  `dev_docs/2026-08-28-leaf-wikilink-click-bug.md`; the outgoing-links panel
+  remains the way to navigate.
 - **`scripts/verify_links.exs`** — link resolution checked against a real
   database: what a link points at after every operation that can change the
   answer. `mix test` is deliberately database-free and `smoke_http.exs` only

@@ -86,31 +86,20 @@ defmodule PhoenixKitKnowledgeBase.WikiLinkRenderingTest do
   end
 
   describe "how to open it" do
-    # The tooltip is the only thing attached to the link itself, and a plain
-    # click does not open it — in an editable surface the click has to place
-    # the caret, and hybrid mode then shows the markdown source. Without this,
-    # that reads as a broken link.
+    # A plain click follows — `follow: :click`, which is Obsidian's Live Preview
+    # behaviour and what this vault wants. The tooltip therefore carries the
+    # destination rather than a gesture; there is only one gesture.
 
-    test "an editable surface says Ctrl/Cmd-click" do
-      %{"Ideas" => link} = targets(["Ideas.md"], "", ["Ideas"], true)
-      assert link.title =~ "Ctrl/Cmd-click to open"
+    test "the tooltip names the destination, not a gesture" do
+      %{"Ideas" => link} = targets(["research/Ideas.md"], "", ["Ideas"], true)
+
+      assert link.title == "research/Ideas.md"
+      refute link.title =~ "Ctrl"
     end
 
-    test "a read-only surface says click, because Leaf follows a plain one there" do
-      # No caret competing for the click, so requiring a modifier in a viewer
-      # would be strange — Leaf treats readonly as `follow: :click` regardless.
-      %{"Ideas" => link} = targets(["Ideas.md"], "", ["Ideas"], false)
-
-      assert link.title =~ "click to open"
-      refute link.title =~ "Ctrl/Cmd"
-    end
-
-    test "an ambiguous link says both which note won and how to open it" do
-      %{"Ideas" => link} =
-        targets(["research/Ideas.md", "archive/Ideas.md"], "archive", ["Ideas"], true)
-
-      assert link.title =~ "2 notes share this title"
-      assert link.title =~ "Ctrl/Cmd-click to open"
+    test "an unresolved target invites the reader to create it" do
+      %{"Nowhere" => link} = targets(["Ideas.md"], "", ["Nowhere"], true)
+      assert link.title =~ "click to create it"
     end
 
     test "a viewer is not told to create a note they cannot create" do
