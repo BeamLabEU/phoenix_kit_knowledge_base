@@ -675,7 +675,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     vault = socket.assigns.vault
     from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
 
-    link_targets(Links.resolver(vault.uuid), vault.slug, from_folder, targets)
+    link_targets(
+      Links.resolver(vault.uuid),
+      vault.slug,
+      from_folder,
+      targets,
+      socket.assigns.can_write
+    )
   end
 
   @doc false
@@ -683,8 +689,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # `[[…]]` with. Takes a prebuilt resolver rather than a vault, so what a link
   # renders as can be tested without a database — the same split as
   # `Links.resolve/3`.
-  @spec link_targets(map(), String.t(), String.t(), [String.t()]) :: map()
-  def link_targets(resolver, slug, from_folder, targets) do
+  @spec link_targets(map(), String.t(), String.t(), [String.t()], boolean()) :: map()
+  def link_targets(resolver, slug, from_folder, targets, can_write? \\ true) do
     Map.new(targets, fn target ->
       key = link_key(target)
 
@@ -696,7 +702,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
              exists: false,
              # Leaf ships no wording for an unresolved target on purpose — it
              # is ours to write, about our own idea of what a target is.
-             title: "No note with this title yet — click to create it"
+             title: missing_title(can_write?)
            }}
 
         note ->
@@ -704,7 +710,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
            %{
              href: Paths.note(slug, note.uuid),
              exists: true,
-             title: link_title(resolver, key, note)
+             title: link_title(resolver, key, note, can_write?)
            }}
       end
     end)
@@ -712,15 +718,31 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
   # A link whose bare title several notes answer to still resolves, but the
   # author deserves to be told it was guessed at, and which way.
-  defp link_title(resolver, key, note) do
+  #
+  # The gesture rides along because this tooltip is the only thing attached to
+  # the link itself. In an editable surface a plain click has to place the
+  # caret — Obsidian's rule, and Leaf's default — so the link does not open and
+  # hybrid mode reveals its markdown source instead. That reads as a broken
+  # link unless something says otherwise, and hovering the link is where
+  # somebody puzzled by it will look.
+  defp link_title(resolver, key, note, can_write?) do
     case Links.candidate_count(resolver, key) do
       count when count > 1 ->
-        "#{count} notes share this title — this link resolves to #{note.relative_path}"
+        "#{count} notes share this title — this link resolves to #{note.relative_path}." <>
+          " #{open_gesture(can_write?)}"
 
       _ ->
-        note.relative_path
+        "#{note.relative_path} — #{open_gesture(can_write?)}"
     end
   end
+
+  defp missing_title(true), do: "No note with this title yet — Ctrl/Cmd-click to create it"
+  defp missing_title(false), do: "No note with this title yet"
+
+  # A read-only surface has no caret competing for the click, so Leaf follows a
+  # plain one there regardless of the setting.
+  defp open_gesture(true), do: "Ctrl/Cmd-click to open"
+  defp open_gesture(false), do: "click to open"
 
   # Leaf sends the bare target: the heading anchor and the alias arrive as
   # separate fields and are already stripped. Normalising it is what makes
@@ -1632,8 +1654,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         <p class="text-xs text-base-content/50">
           Type <code>[[</code>
           to link a note or <code>#</code>
-          for a tag — ↑↓ to move, Enter to accept. Ctrl-click a link to follow
-          it. Saves as you write.
+          for a tag — ↑↓ to move, Enter to accept. <strong>Ctrl/Cmd-click</strong>
+          a link to open it; a plain click puts the caret in it to edit, as in
+          Obsidian. Saves as you write.
         </p>
 
         <.live_component

@@ -39,8 +39,8 @@ defmodule PhoenixKitKnowledgeBase.WikiLinkRenderingTest do
     }
   end
 
-  defp targets(paths, from_folder, asked) do
-    VaultLive.link_targets(resolver(paths), "research-vault", from_folder, asked)
+  defp targets(paths, from_folder, asked, can_write? \\ true) do
+    VaultLive.link_targets(resolver(paths), "research-vault", from_folder, asked, can_write?)
   end
 
   describe "a target that exists" do
@@ -71,7 +71,7 @@ defmodule PhoenixKitKnowledgeBase.WikiLinkRenderingTest do
 
     test "the tooltip names the note, so a guessed link says where it went" do
       %{"Ideas" => link} = targets(["research/Ideas.md"], "", ["Ideas"])
-      assert link.title == "research/Ideas.md"
+      assert link.title =~ "research/Ideas.md"
     end
 
     test "an ambiguous title says so, and says which note won" do
@@ -82,6 +82,42 @@ defmodule PhoenixKitKnowledgeBase.WikiLinkRenderingTest do
 
       assert link.title =~ "2 notes share this title"
       assert link.title =~ "archive/Ideas.md"
+    end
+  end
+
+  describe "how to open it" do
+    # The tooltip is the only thing attached to the link itself, and a plain
+    # click does not open it — in an editable surface the click has to place
+    # the caret, and hybrid mode then shows the markdown source. Without this,
+    # that reads as a broken link.
+
+    test "an editable surface says Ctrl/Cmd-click" do
+      %{"Ideas" => link} = targets(["Ideas.md"], "", ["Ideas"], true)
+      assert link.title =~ "Ctrl/Cmd-click to open"
+    end
+
+    test "a read-only surface says click, because Leaf follows a plain one there" do
+      # No caret competing for the click, so requiring a modifier in a viewer
+      # would be strange — Leaf treats readonly as `follow: :click` regardless.
+      %{"Ideas" => link} = targets(["Ideas.md"], "", ["Ideas"], false)
+
+      assert link.title =~ "click to open"
+      refute link.title =~ "Ctrl/Cmd"
+    end
+
+    test "an ambiguous link says both which note won and how to open it" do
+      %{"Ideas" => link} =
+        targets(["research/Ideas.md", "archive/Ideas.md"], "archive", ["Ideas"], true)
+
+      assert link.title =~ "2 notes share this title"
+      assert link.title =~ "Ctrl/Cmd-click to open"
+    end
+
+    test "a viewer is not told to create a note they cannot create" do
+      %{"Nowhere" => link} = targets(["Ideas.md"], "", ["Nowhere"], false)
+
+      assert link.title =~ "No note with this title yet"
+      refute link.title =~ "create"
     end
   end
 

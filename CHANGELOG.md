@@ -15,9 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   renders as pointing somewhere the backlinks panel disagrees with. An
   ambiguous title still resolves and now says so on hover, naming the note it
   picked. An unresolved target is styled distinctly and points at the create
-  page. Ctrl/Cmd-click follows while editing; a click in a read-only vault
-  follows on its own. Leaf never navigates — the target is re-resolved on the
-  server rather than trusting the href the page was rendered with.
+  page. Ctrl/Cmd-click follows while editing — a plain click has to place the
+  caret, as in Obsidian, and hybrid mode then shows the link's markdown source
+  — so the hover tooltip on every link says which gesture opens it. A click in
+  a read-only vault follows on its own, and says so. Leaf never navigates: the
+  target is re-resolved on the server rather than trusting the href the page
+  was rendered with.
 - **`scripts/verify_links.exs`** — link resolution checked against a real
   database: what a link points at after every operation that can change the
   answer. `mix test` is deliberately database-free and `smoke_http.exs` only
