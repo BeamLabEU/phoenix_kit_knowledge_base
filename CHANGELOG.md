@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`scripts/verify_links.exs`** — link resolution checked against a real
+  database: what a link points at after every operation that can change the
+  answer. `mix test` is deliberately database-free and `smoke_http.exs` only
+  proves a page renders, not that it renders the right note.
 - **Trash.** Deleted notes and folders move to `.trash/` inside the vault
   instead of being unlinked, under a per-deletion directory that preserves the
   original path — so restore is a move, and deleting the same path twice keeps
@@ -28,6 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Leaf 0.6.0, phoenix_kit 2.13.13.** No code change was needed — the existing
+  `~> 0.5` constraint already admits 0.6.0 — but the pair has to move together:
+  core vendors the jsDelivr pin for Leaf's JS, and 2.13.13 is the release that
+  points it at `@v0.6.0`. 0.6.0 brings `Leaf.Collab` (live editing) and
+  `[[wiki-link]]` rendering, neither wired up here yet.
 - **Reading view removed.** There is one surface — the editor — as in Obsidian.
 - **File names are validated, not repaired.** An invalid title is refused with
   the reason instead of having its characters silently stripped, which used to
@@ -36,6 +45,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Renaming or moving a note listed it twice.** `index_entry/4` looks the row
+  up by path, which is the wrong key when the path is what changed: it found
+  nothing at the new path and inserted a second row, leaving the old entry
+  pointing at a file that had moved, `rename_note/4` returning that stale row,
+  and every backlink still attached to it. The row being moved is now named
+  explicitly. (Rescan-detected renames were never affected — they update in
+  place and match by content hash.)
+- **The Reload button did not reload the editor.** Leaf's surfaces are
+  `phx-update="ignore"`, so assigning `content` changes nothing on screen —
+  replacing the buffer needs `send_update(Leaf, action: :set_content, …)`.
+  **Discard mine, reload** and a rescan that changed the open note underneath
+  both left the old text in the editor while the server believed otherwise.
+- **`[[` autocomplete died at the first space.** Neither suggestion trigger set
+  `:token`, so both inherited Leaf's default of `[\p{L}\p{N}_-]`. A title like
+  `Attention Is All You Need` could never be completed, nor a path-qualified
+  `[[research/Ideas]]`, nor a nested `#project/alpha` tag. Both tokens now match
+  the parser that has to read the result back.
+- **A resolved `[[link]]` never reconsidered its target.** Resolution only
+  filled links that were still unresolved, so a link kept pointing at whichever
+  same-named note got there first — creating a nearer `archive/Ideas.md` did
+  not take the link from `research/Ideas.md` until the next full rescan,
+  contradicting the documented same-folder rule while still rendering as
+  resolved. Every operation that changes which notes answer to a name — create,
+  rename, move, delete, restore, folder delete — now re-resolves the links
+  naming it. Scoped by key, so the work is proportional to how many notes
+  mention that title rather than to vault size.
+- **A viewer could rename a note, and could start a rescan.** Both were the
+  only mutating events without a write check; the title input is `readonly`,
+  but readonly is a DOM property, not a permission. Membership changes now
+  re-resolve the actor's role on each event too, rather than trusting the check
+  done at mount.
+- **A vault row could point at a directory that was never created.** The row
+  was inserted first and the directory made second, so a failed `mkdir` left a
+  vault that failed on its first read. Reversed, as the comment above it always
+  claimed.
+- **UI copy contradicted the model.** Deleting a note or folder said "from
+  disk… cannot be undone" when both go to `.trash/`, and the new-note pane
+  claimed titles are unique within a vault — they are unique within a *folder*,
+  and two folders each holding an `Ideas` is the case the whole tie-break
+  exists for.
 - **Every vault page crashed with `BadBooleanError`.** The trash panel added
   `@search_results and not @trash_open` to a section guard; `@search_results` is
   `nil` when no search is running, and `nil and …` raises even though

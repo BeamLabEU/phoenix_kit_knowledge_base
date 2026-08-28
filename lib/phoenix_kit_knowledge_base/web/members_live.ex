@@ -57,35 +57,60 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
   end
 
   def handle_event("add_member", %{"user" => user_uuid, "role" => role}, socket) do
-    case Vaults.put_member(socket.assigns.vault, user_uuid, role) do
-      {:ok, _member} ->
-        {:noreply,
-         socket
-         |> assign(:query, "")
-         |> assign(:candidates, [])
-         |> load_members()}
-
-      {:error, _changeset} ->
-        {:noreply, put_flash(socket, :error, "Could not add that person.")}
+    with :ok <- require_manage(socket),
+         {:ok, _member} <- Vaults.put_member(socket.assigns.vault, user_uuid, role) do
+      {:noreply,
+       socket
+       |> assign(:query, "")
+       |> assign(:candidates, [])
+       |> load_members()}
+    else
+      {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
+      _ -> {:noreply, put_flash(socket, :error, "Could not add that person.")}
     end
   end
 
   def handle_event("update_role", %{"member" => member_uuid, "role" => role}, socket) do
-    with %VaultMember{} = member <- Vaults.get_member(socket.assigns.vault, member_uuid),
+    with :ok <- require_manage(socket),
+         %VaultMember{} = member <- Vaults.get_member(socket.assigns.vault, member_uuid),
          {:ok, _updated} <- Vaults.put_member(socket.assigns.vault, member.user_uuid, role) do
       {:noreply, load_members(socket)}
     else
+      {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
       _ -> {:noreply, put_flash(socket, :error, "Could not change that role.")}
     end
   end
 
   def handle_event("remove_member", %{"member" => member_uuid}, socket) do
-    with %VaultMember{} = member <- Vaults.get_member(socket.assigns.vault, member_uuid),
+    with :ok <- require_manage(socket),
+         %VaultMember{} = member <- Vaults.get_member(socket.assigns.vault, member_uuid),
          {:ok, _} <- Vaults.remove_member(member) do
       {:noreply, load_members(socket)}
     else
+      {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
       _ -> {:noreply, put_flash(socket, :error, "Could not remove that member.")}
     end
+  end
+
+  # `mount/3` proves the role once. These events grant and revoke access to the
+  # vault, and this LiveView can stay open for hours — long enough for the
+  # ownership that opened it to have been taken away. Re-resolving from the
+  # current scope on every mutation is the same rule `IndexLive.delete_vault`
+  # already follows: trust the scope, never the page that rendered the button.
+  defp require_manage(socket) do
+    with {:ok, _vault, role} <-
+           Vaults.fetch_for(socket.assigns.vault.slug, socket.assigns.phoenix_kit_current_scope),
+         true <- Vaults.can?(role, :manage) do
+      :ok
+    else
+      _ -> {:error, :unauthorized}
+    end
+  end
+
+  defp unauthorized(socket) do
+    socket
+    |> put_flash(:error, "Only a vault owner can manage its members.")
+    |> push_navigate(to: Paths.vault(socket.assigns.vault.slug))
   end
 
   defp load_members(socket) do

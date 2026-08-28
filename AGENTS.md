@@ -39,6 +39,7 @@ lib/phoenix_kit_knowledge_base/
   schemas/          five Ecto schemas, all `use PhoenixKit.SchemaPrefix`
   web/              three LiveViews
 scripts/smoke_http.exs                   renders every page as a logged-in user
+scripts/verify_links.exs                 link resolution against a real database
 dev_docs/                                date-prefixed working notes (not shipped)
 ```
 
@@ -49,7 +50,7 @@ Three layers, and **none of them alone is sufficient**:
 | Layer | Command | Catches | Blind to |
 |---|---|---|---|
 | Unit | `mix test` | parsing, path safety, resolution, changesets | anything needing a DB or a rendered page |
-| Live DB | ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan | templates, client-side state |
+| Live DB | `scripts/verify_links.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link actually points at | templates, client-side state |
 | HTTP | `scripts/smoke_http.exs` | template crashes, dead renders | client-side JS behaviour |
 
 **`curl` against an admin route proves nothing.** It is never authenticated, so
@@ -60,6 +61,35 @@ several rounds. Use `scripts/smoke_http.exs`, which forges a session cookie.
 **Nothing here can verify the editor.** Leaf is client-side; its DOM state and
 message timing are outside anything this repo can assert. Two of the day-one
 bugs were found by a person using the app, and that is expected to stay true.
+
+### The host app, which layers 2 and 3 both need
+
+This module is a path dependency of `/www/app` (`DmitriDon`), and both lower
+layers run from *there*, not from here. `/www/app/AGENTS.md` is the authority on
+that app; what matters here:
+
+- **The server is supervised.** `supervisorctl` owns it as the `elixir`
+  service, with `autorestart=true`, started by `/usr/local/bin/start-elixir.sh`.
+  Restart it with **`supervisorctl restart elixir`** — never by killing the pid,
+  which supervisord will simply restart out from under you. `supervisorctl
+  status` for its uptime, `/var/log/elixir.log` for its output.
+- **`MIX_ENV=dev`**, set container-wide by `/etc/supervisor/conf.d/elixir-app.conf`
+  and inherited by every shell, so every `mix` command here builds into
+  `_build/dev`.
+- **Running `mix` in `/www/app` recompiles this module into the same
+  `_build/dev` the live server loads from.** The running VM keeps the code it
+  already has in memory, so a `mix run --no-start` leaves new `.beam` files on
+  disk under an old server — harmless, but it means **layer 3 tests whatever
+  was compiled at boot, not your change.** Restart before believing a green
+  `smoke_http.exs`.
+- **The node is named**, so the live system can be driven without restarting it
+  — useful when a second `mix phx.server` would only fail to bind port 4000
+  (`PHX_SERVER=true` is set):
+
+  ```bash
+  elixir --sname rpc$$ --cookie $(cat ~/.erlang.cookie) \
+    --rpc-eval app@$(hostname -s) 'IO.inspect(:ok)'
+  ```
 
 ## Gotchas, all of them paid for
 
@@ -80,6 +110,10 @@ bugs were found by a person using the app, and that is expected to stay true.
   `fragment("? ILIKE ? ESCAPE '\\'", …)`.
 - Uppercase names are **aliases**, not constants. `REPO = MyApp.Repo` is a
   failing match against `Elixir.REPO`.
+- `Notes.index_entry/4` finds the row to update **by path**, which is the wrong
+  key when the path is what changed. A rename or move must pass
+  `existing: note`, or it finds nothing at the new path, inserts a second row,
+  and leaves the note listed twice with every backlink still on the stale one.
 - `~r{…}` closes at the first `}`, so `\p{L}` breaks it. `~r/…/` interpolates,
   so a literal `#` must be `\#`.
 
@@ -108,6 +142,12 @@ bugs were found by a person using the app, and that is expected to stay true.
   rule plus a paragraph, destroying every property.
 - Leaf's JS is lazy-loaded from jsDelivr by core's vendored `phoenix_kit.js`, not
   bundled. It needs network and a permissive `script-src`.
+- A suggestion trigger with no `:token` inherits Leaf's default,
+  `[\p{L}\p{N}_-]`, which closes the popup at the first space — so `[[` never
+  completes a title with a space in it, and `#` never completes `#project/alpha`.
+  Set `:token` to match the parser: `Markdown`'s wiki-link regex is
+  `[^\[\]\n]+`, and its tag regex is `[\p{L}\p{N}_/-]`. Pinned by a test,
+  because inheriting the wrong default fails nothing.
 
 **Filesystem**
 

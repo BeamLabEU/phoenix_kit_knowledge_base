@@ -113,15 +113,18 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     prefix = folder.relative_path <> "/"
 
     with {:ok, _trash_path} <- Storage.trash_folder(vault.directory, folder.relative_path) do
-      {removed, _} =
-        repo().delete_all(
-          from(n in Note,
-            where:
-              n.vault_uuid == ^vault.uuid and
-                (n.folder_path == ^folder.relative_path or
-                   like(n.folder_path, ^(escape_like(prefix) <> "%")))
-          )
+      doomed_notes =
+        from(n in Note,
+          where:
+            n.vault_uuid == ^vault.uuid and
+              (n.folder_path == ^folder.relative_path or
+                 like(n.folder_path, ^(escape_like(prefix) <> "%")))
         )
+
+      # Loaded before the delete, because the keys they answered to are what the
+      # rest of the vault's links have to be re-resolved against afterwards.
+      gone = repo().all(doomed_notes)
+      {removed, _} = repo().delete_all(doomed_notes)
 
       repo().delete_all(
         from(f in Folder,
@@ -131,6 +134,11 @@ defmodule PhoenixKitKnowledgeBase.Notes do
                  like(f.relative_path, ^(escape_like(prefix) <> "%")))
         )
       )
+
+      # Same reasoning as `delete_note/2`: `nilify_all` has unresolved every link
+      # into these notes, which is only right if nothing else answers to their
+      # titles. A copy elsewhere in the vault should inherit those links.
+      Links.reresolve_keys(vault.uuid, Enum.flat_map(gone, &Links.keys_for/1))
 
       Events.vault_changed(vault.uuid, :folder)
       {:ok, removed}
@@ -279,7 +287,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
          false <- Storage.note_exists?(vault.directory, relative_path),
          {:ok, stat} <- Storage.write_note(vault.directory, relative_path, content),
          {:ok, note} <- index_entry(vault, relative_path, stat, created_by: actor_uuid) do
-      Links.resolve_for_note(note)
+      # Not just the links that were waiting for this title — every link naming
+      # it, including ones already resolved to a note this one now beats on the
+      # same-folder tie-break. See `Links.reresolve_keys/2`.
+      Links.reresolve_for_note(note)
       {:ok, note}
     else
       true -> {:error, :already_exists}
@@ -336,12 +347,13 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       with :ok <- check_not_stale(vault, note, opts),
            :ok <- Storage.move_note(vault.directory, note.relative_path, target),
            {:ok, stat} <- Storage.stat_note(vault.directory, target),
-           {:ok, moved} <- index_entry(vault, target, stat, updated_by: opts[:actor_uuid]) do
+           {:ok, moved} <-
+             index_entry(vault, target, stat, updated_by: opts[:actor_uuid], existing: note) do
         # The name changed, so both directions of resolution need revisiting:
         # what pointed here under the old name, and what was waiting for the new
-        # one.
-        Links.unresolve_stale(moved)
-        Links.resolve_for_note(moved)
+        # one. Both key sets go in together — a link to the old name may now
+        # belong to a different note entirely, not merely be unresolved.
+        Links.reresolve_keys(vault.uuid, Links.keys_for(note) ++ Links.keys_for(moved))
         :ok
       end
     end
@@ -362,6 +374,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   def delete_note(%Vault{} = vault, %Note{} = note) do
     with {:ok, _trash_path} <- Storage.trash_note(vault.directory, note.relative_path),
          {:ok, deleted} <- repo().delete(note) do
+      # The FK's `nilify_all` has just turned every link here into an unresolved
+      # one. That is right only when nothing else answers to the name — if the
+      # vault still holds another `Ideas.md`, those links belong to it now.
+      Links.reresolve_for_note(deleted)
       Events.note_deleted(deleted)
       {:ok, deleted}
     end
@@ -387,7 +403,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     with :ok <- Storage.restore(vault.directory, trash_path, original_path),
          {:ok, stat} <- Storage.stat_note(vault.directory, original_path),
          {:ok, note} <- index_entry(vault, original_path, stat) do
-      Links.resolve_for_note(note)
+      Links.reresolve_for_note(note)
       {:ok, note}
     end
   end
@@ -417,11 +433,19 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   Pass `broadcast: false` during a bulk reindex; a rescan announces itself once
   at the end rather than once per file.
+
+  Pass `existing: note` when the file has just *moved* and the row to update is
+  therefore not the one at `relative_path`. Without it a rename looks up the
+  new path, finds nothing, and inserts a second row — leaving the note listed
+  twice, the old entry pointing at a file that is no longer there, and every
+  backlink still attached to the stale one. `Storage.move_note/3` refuses to
+  overwrite an existing file, so the row named here cannot collide with a real
+  note at the target.
   """
   @spec index_entry(Vault.t(), String.t(), map(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}
   def index_entry(%Vault{} = vault, relative_path, stat, opts \\ []) do
-    existing = get_note_by_path(vault.uuid, relative_path)
+    existing = opts[:existing] || get_note_by_path(vault.uuid, relative_path)
 
     attrs = %{
       "vault_uuid" => vault.uuid,

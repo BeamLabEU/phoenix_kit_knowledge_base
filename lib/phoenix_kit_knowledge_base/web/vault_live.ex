@@ -58,6 +58,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     %{
       trigger: "[[",
       boundary: :any,
+      # Leaf's default token is `[\\p{L}\\p{N}_-]`, which closes the popup on the
+      # first space — `Attention Is All You Need` would never complete. A link
+      # target may hold anything the parser accepts, and `@wiki_link_regex` in
+      # `Markdown` is `[^\\[\\]\\n]+`: spaces, `/` for `[[folder/Note]]`, `#` for
+      # a heading anchor and `|` for an alias all have to keep the popup open.
+      # Matching that class exactly is the point — a token looser than the
+      # parser suggests links the parser will not read back.
+      token: "[^\\[\\]\\n]",
       min_chars: 0,
       max_length: 200,
       allow_create: true,
@@ -70,6 +78,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       # `#` at the first column opens a heading; only mid-line does it mean a
       # tag. This is the setting that stops the two fighting over a keystroke.
       boundary: :not_line_start,
+      # The default token minus nothing plus `/`, so nested tags like
+      # `#project/alpha` complete. Mirrors `@inline_tag_regex` in `Markdown`.
+      token: "[\\p{L}\\p{N}_/-]",
       min_chars: 0,
       max_length: 60,
       allow_create: true,
@@ -255,6 +266,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     %{note: note} = socket.assigns
 
     cond do
+      # The title input is `readonly` for a viewer, but readonly is a property of
+      # a DOM node, not a permission — a hand-sent `phx-blur` reaches this
+      # handler regardless. Every other mutating event gates on `require_write`;
+      # this one was the hole.
+      require_write(socket) != :ok ->
+        {:noreply, socket}
+
       is_nil(note) ->
         {:noreply, socket}
 
@@ -292,7 +310,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          {:ok, _} <- Notes.delete_note(vault, note) do
       {:noreply,
        socket
-       |> put_flash(:info, "Note deleted from disk. Links to it are now unresolved.")
+       |> put_flash(:info, "Note moved to the trash. Links to it are now unresolved.")
        |> assign(:note, nil)
        |> load_workspace()
        |> push_patch(to: Paths.vault(vault.slug))}
@@ -347,7 +365,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
        socket
        |> put_flash(
          :info,
-         "Deleted #{folder.name} and #{removed} #{if removed == 1, do: "note", else: "notes"} from disk."
+         "Moved #{folder.name} and #{removed} #{if removed == 1, do: "note", else: "notes"} to the trash."
        )
        |> assign(:selected_folder, :any)
        |> assign(:note, nil)
@@ -420,19 +438,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
   # ── Events: rescan ────────────────────────────────────────────────────────
 
+  # Gated on write, not because a rescan changes a file — it does not — but
+  # because it walks and hashes the whole vault inside this LiveView process. An
+  # ungated button lets a viewer hold the process for the length of a vault
+  # scan, repeatedly.
   def handle_event("rescan", _params, socket) do
-    case Rescan.run(socket.assigns.vault) do
-      {:ok, report} ->
-        socket =
-          socket
-          |> assign(:rescan_report, report)
-          |> load_workspace()
-          |> reload_open_note()
-
-        {:noreply, put_flash(socket, :info, "Rescan: #{Rescan.summarize(report)}")}
-
-      {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Rescan failed: #{error_message(reason)}")}
+    if require_write(socket) == :ok do
+      run_rescan(socket)
+    else
+      {:noreply, put_flash(socket, :error, "You do not have permission to rescan.")}
     end
   end
 
@@ -689,6 +703,22 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
+  defp run_rescan(socket) do
+    case Rescan.run(socket.assigns.vault) do
+      {:ok, report} ->
+        socket =
+          socket
+          |> assign(:rescan_report, report)
+          |> load_workspace()
+          |> reload_open_note()
+
+        {:noreply, put_flash(socket, :info, "Rescan: #{Rescan.summarize(report)}")}
+
+      {:error, reason} ->
+        {:noreply, put_flash(socket, :error, "Rescan failed: #{error_message(reason)}")}
+    end
+  end
+
   # Re-read the open note after its file may have changed.
   defp reload_open_note(%{assigns: %{note: nil}} = socket), do: socket
 
@@ -701,8 +731,32 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         |> push_patch(to: Paths.vault(socket.assigns.vault.slug))
 
       note ->
-        open_note(socket, note)
+        socket |> open_note(note) |> push_editor_content(note)
     end
+  end
+
+  # Assigning `@content` is not enough to change what is on screen. Leaf's
+  # editing surfaces are `phx-update="ignore"`, so LiveView never patches them
+  # after mount and its own `update/2` only re-assigns — it pushes nothing to
+  # the client unless the host asks with `:set_content`.
+  #
+  # Opening a *different* note does not come through here: `editor_id/1` is
+  # per-note, so that mounts a fresh component which renders the new content on
+  # its own. This is the same-note case — **Discard mine, reload** and a rescan
+  # that changed the file underneath — where the component is already mounted
+  # and holding the old buffer.
+  #
+  # `mark_saved` defaults to true, which is what we want: the buffer now matches
+  # the bytes on disk, so the editor should read clean rather than claiming
+  # unsaved work nobody typed.
+  @doc false
+  # Public only so a test can assert the command is issued at all: this is the
+  # one thing standing between "the server reloaded the note" and "the person
+  # sees the reloaded note", and no rendering test in this repo can reach it.
+  @spec push_editor_content(term(), Note.t()) :: term()
+  def push_editor_content(socket, %Note{} = note) do
+    send_update(Leaf, id: editor_id(note), action: :set_content, content: note.content || "")
+    socket
   end
 
   # ── Loading ───────────────────────────────────────────────────────────────
@@ -859,7 +913,12 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
-  defp suggestion_configs, do: @suggestion_configs
+  @doc false
+  # Public so a test can pin the tokens. Leaf supplies a default that silently
+  # breaks both triggers, so this is exactly the setting a regression would
+  # remove without failing anything else.
+  @spec suggestion_configs() :: [map()]
+  def suggestion_configs, do: @suggestion_configs
 
   defp save_label(:saved), do: "Saved"
   defp save_label(:saving), do: "Saving…"
@@ -1263,7 +1322,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             type="button"
             phx-click="delete_folder"
             phx-value-uuid={node.folder.uuid}
-            data-confirm={"Delete “#{node.folder.name}” from disk, including every note and subfolder inside it? This cannot be undone."}
+            data-confirm={"Move “#{node.folder.name}” to the trash, including every note and subfolder inside it?"}
             class="btn btn-ghost btn-xs opacity-0 group-hover:opacity-100"
             aria-label="Delete folder"
           >
@@ -1312,7 +1371,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       <p class="mt-1 text-sm text-base-content/60">
         {if @title == "",
           do:
-            "Give it a title. Titles are unique within a vault — that is what makes [[links]] unambiguous.",
+            "Give it a title. That title is the filename, so it has to be unique inside its folder — two folders may each hold an “Ideas”, and a bare [[Ideas]] then resolves to the nearest one.",
           else:
             "Something links here. Create the note and every link waiting for this title resolves to it."}
       </p>
@@ -1374,7 +1433,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             :if={@can_write}
             type="button"
             phx-click="delete_note"
-            data-confirm={"Delete “#{@note.title}” from disk? Links to it become unresolved."}
+            data-confirm={"Move “#{@note.title}” to the trash? Links to it become unresolved until it is restored."}
             class="btn btn-ghost btn-sm text-error"
             aria-label="Delete note"
           >

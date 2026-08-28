@@ -113,4 +113,107 @@ defmodule PhoenixKitKnowledgeBase.LinksResolutionTest do
       assert Links.path_key("Note.md") == "note"
     end
   end
+
+  describe "re-resolving links after the vault changes" do
+    # The bug this exists for: `resolve_for_note/1` only fills rows whose
+    # target is nil, so a link that resolved once never reconsiders. Creating a
+    # nearer same-named note left the link pointing at the far one, rendered as
+    # resolved, with nothing to tell the author it went to the wrong note.
+
+    defp link(uuid, key, from_folder, current) do
+      %{
+        uuid: uuid,
+        target_key: key,
+        from_folder: from_folder,
+        current: current,
+        source_uuid: "archive/A.md"
+      }
+    end
+
+    test "an already-resolved link moves to a nearer note that has since appeared" do
+      # 1. archive/A.md writes [[Ideas]] — nothing to point at
+      # 2. research/Ideas.md is created — the link resolves there
+      # 3. archive/Ideas.md is created — same folder as the linker, so it wins
+      rows = [link("l1", "ideas", "archive", "research/Ideas.md")]
+      resolver = resolver(["research/Ideas.md", "archive/Ideas.md"])
+
+      assert [{"l1", "archive/Ideas.md"}] = Links.changed_targets(rows, resolver)
+    end
+
+    test "a link already pointing at the right note is left alone" do
+      # Nothing to write, so nothing is written — the re-resolve is cheap on
+      # the overwhelmingly common case of nothing having changed.
+      rows = [link("l1", "ideas", "archive", "archive/Ideas.md")]
+      resolver = resolver(["research/Ideas.md", "archive/Ideas.md"])
+
+      assert [] = Links.changed_targets(rows, resolver)
+    end
+
+    test "a link resolves when the note it names is finally written" do
+      rows = [link("l1", "ideas", "archive", nil)]
+
+      assert [{"l1", "research/Ideas.md"}] =
+               Links.changed_targets(rows, resolver(["research/Ideas.md"]))
+    end
+
+    test "a link becomes unresolved when the note it pointed at is gone" do
+      # Deleting the only Ideas.md: the mention survives the target, which is
+      # what makes the unresolved-links list a to-do list.
+      rows = [link("l1", "ideas", "archive", "research/Ideas.md")]
+
+      assert [{"l1", nil}] = Links.changed_targets(rows, resolver(["Other.md"]))
+    end
+
+    test "deleting one of two same-named notes hands its links to the survivor" do
+      # `nilify_all` on the FK unresolves them; that is only right if nothing
+      # else answers to the name.
+      rows = [link("l1", "ideas", "archive", nil)]
+
+      assert [{"l1", "research/Ideas.md"}] =
+               Links.changed_targets(rows, resolver(["research/Ideas.md"]))
+    end
+
+    test "a path-qualified link ignores a nearer note entirely" do
+      # Writing [[research/Ideas]] is how you say you meant that one; a new
+      # archive/Ideas.md must not steal it.
+      rows = [
+        %{
+          uuid: "l1",
+          target_key: "research/ideas",
+          from_folder: "archive",
+          current: "research/Ideas.md",
+          source_uuid: "archive/A.md"
+        }
+      ]
+
+      assert [] =
+               Links.changed_targets(rows, resolver(["research/Ideas.md", "archive/Ideas.md"]))
+    end
+
+    test "a note that ends up linking to itself is left unresolved, not self-linked" do
+      # Reachable by renaming a note to the title it already links to. A
+      # self-backlink is noise, and `reindex_note/2` drops those rows too.
+      rows = [
+        %{
+          uuid: "l1",
+          target_key: "ideas",
+          from_folder: "archive",
+          current: nil,
+          source_uuid: "archive/Ideas.md"
+        }
+      ]
+
+      assert [] = Links.changed_targets(rows, resolver(["archive/Ideas.md"]))
+    end
+
+    test "several links wanting the same title are all re-pointed" do
+      rows = [
+        link("l1", "ideas", "archive", "research/Ideas.md"),
+        link("l2", "ideas", "archive", "research/Ideas.md")
+      ]
+
+      assert [{"l1", "archive/Ideas.md"}, {"l2", "archive/Ideas.md"}] =
+               Links.changed_targets(rows, resolver(["research/Ideas.md", "archive/Ideas.md"]))
+    end
+  end
 end

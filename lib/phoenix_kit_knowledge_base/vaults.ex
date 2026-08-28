@@ -369,9 +369,9 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
     slug = Ecto.Changeset.get_field(changeset, :slug)
 
     with {:ok, attrs} <- put_directory(attrs, kind, owner_email, slug),
+         :ok <- ensure_directory(attrs),
          changeset <- Vault.changeset(%Vault{}, attrs),
-         {:ok, vault} <- repo().insert(changeset),
-         :ok <- Storage.ensure_vault(vault.directory) do
+         {:ok, vault} <- repo().insert(changeset) do
       {:ok, vault}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
@@ -385,6 +385,15 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
         {:error, reason}
     end
   end
+
+  # No slug means no directory to build, and the changeset is about to reject the
+  # vault for exactly that. Let it, rather than failing here with a path error
+  # that says nothing about the missing name.
+  defp ensure_directory(%{"directory" => directory}) when is_binary(directory) do
+    Storage.ensure_vault(directory)
+  end
+
+  defp ensure_directory(_attrs), do: :ok
 
   defp put_directory(attrs, _kind, _owner_email, nil), do: {:ok, attrs}
 

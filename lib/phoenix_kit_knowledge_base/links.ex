@@ -218,6 +218,106 @@ defmodule PhoenixKitKnowledgeBase.Links do
   end
 
   @doc """
+  The two keys a note answers to: its bare title, and its path-qualified form.
+  """
+  @spec keys_for(Note.t()) :: [String.t()]
+  def keys_for(%Note{} = note), do: Enum.uniq([note.title_key, path_key(note.relative_path)])
+
+  @doc """
+  Re-resolve every link in a vault that names one of `keys`, whether or not it
+  currently resolves.
+
+  This is the difference between `resolve_for_note/1` and being *right*.
+  `resolve_for_note/1` only fills rows where `target_note_uuid` is nil, so an
+  already-resolved link stays pointed at whichever note got there first:
+
+    1. `archive/A.md` writes `[[Ideas]]` — nothing to resolve to, so unresolved
+    2. `research/Ideas.md` is created — the link now points at research
+    3. `archive/Ideas.md` is created — same-folder should win, but the row is
+       already resolved, so it does not move until a full rescan
+
+  Step 3 contradicts the resolution rules at the top of this module, which is a
+  worse bug than it looks: the link renders as resolved, so nothing tells the
+  author it went to the wrong note.
+
+  Scoped by key rather than rebuilding the vault, because only links *naming*
+  the changed note can change meaning. The work is proportional to how many
+  notes mention that title, not to vault size, which is what makes it cheap
+  enough to run on every create, rename, move, restore and delete.
+  """
+  @spec reresolve_keys(String.t(), [String.t()]) :: non_neg_integer()
+  def reresolve_keys(vault_uuid, keys)
+
+  def reresolve_keys(_vault_uuid, []), do: 0
+
+  def reresolve_keys(vault_uuid, keys) do
+    keys = Enum.uniq(keys)
+    resolver = resolver(vault_uuid)
+    now = DateTime.utc_now()
+
+    # The source note's folder is what makes the same-folder tie-break possible,
+    # so it has to come back with the row.
+    rows =
+      repo().all(
+        from(l in NoteLink,
+          join: source in Note,
+          on: source.uuid == l.source_note_uuid,
+          where: l.vault_uuid == ^vault_uuid and l.target_key in ^keys,
+          select: %{
+            uuid: l.uuid,
+            target_key: l.target_key,
+            current: l.target_note_uuid,
+            source_uuid: l.source_note_uuid,
+            from_folder: source.folder_path
+          }
+        )
+      )
+
+    rows
+    |> changed_targets(resolver)
+    # Grouped so a title mentioned by fifty notes is two updates, not fifty.
+    |> Enum.group_by(fn {_uuid, target_uuid} -> target_uuid end, fn {uuid, _} -> uuid end)
+    |> Enum.reduce(0, fn {target_uuid, link_uuids}, acc ->
+      {count, _} =
+        repo().update_all(
+          from(l in NoteLink, where: l.uuid in ^link_uuids),
+          set: [target_note_uuid: target_uuid, updated_at: now]
+        )
+
+      acc + count
+    end)
+  end
+
+  @doc false
+  # The decision half of `reresolve_keys/2`, split out because it is the part
+  # that can be wrong: which links should now point somewhere else, as
+  # `{link_uuid, new_target_uuid}`. Pure, so the tie-break can be tested without
+  # a database — same as `resolve/3`.
+  @spec changed_targets([map()], resolver()) :: [{term(), String.t() | nil}]
+  def changed_targets(rows, resolver) do
+    rows
+    |> Enum.map(&{&1, intended_target(resolver, &1)})
+    # Only rows whose answer actually changed are written.
+    |> Enum.reject(fn {row, target_uuid} -> row.current == target_uuid end)
+    |> Enum.map(fn {row, target_uuid} -> {row.uuid, target_uuid} end)
+  end
+
+  @doc "Re-resolve every link naming this note, under either of its keys."
+  @spec reresolve_for_note(Note.t()) :: non_neg_integer()
+  def reresolve_for_note(%Note{} = note), do: reresolve_keys(note.vault_uuid, keys_for(note))
+
+  # A note that links to itself is left unresolved rather than pointed at its
+  # own source — `reindex_note/2` drops those rows for the same reason, and a
+  # self-backlink is only noise.
+  defp intended_target(resolver, row) do
+    case resolve(resolver, row.target_key, row.from_folder || "") do
+      nil -> nil
+      %{uuid: uuid} when uuid == row.source_uuid -> nil
+      %{uuid: uuid} -> uuid
+    end
+  end
+
+  @doc """
   Un-resolve links pointing at a note that no longer answers to that name.
 
   Needed when a note is renamed or moved: the FK's `nilify_all` only fires on
