@@ -558,6 +558,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
+  # The tree opens a note through a `<.link patch>`; the context menu cannot
+  # (its items' hrefs are fixed at render time, only `phx-value-*` varies per
+  # row), so "Open" patches from here instead.
+  def handle_event("open_note", %{"file_uuid" => note_uuid}, socket) do
+    {:noreply, push_patch(socket, to: Paths.note(socket.assigns.vault.slug, note_uuid))}
+  end
+
   def handle_event("trash_file", %{"file_uuid" => note_uuid}, socket) do
     with :ok <- require_write(socket),
          %Note{} = note <- Notes.get_note(socket.assigns.vault.uuid, note_uuid),
@@ -1686,6 +1693,64 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             </.link>
           </:item>
         </.folder_explorer>
+
+        <%!--
+          Right-click (or touch-and-hold) menus for the tree. Core's explorer
+          already marks every row with `data-context-kind` / `-value` / `-label`,
+          so these two declarations are the whole cost — one menu element each,
+          not one per row, and no round-trip to open.
+
+          `within` confines them to the sidebar: a note's title appears in the
+          search results and the editor too, and a right-click there should get
+          the browser's own menu.
+
+          The folder menu stamps BOTH spellings of the uuid param because the
+          handlers below disagree — `start_rename_folder` takes `folder-uuid`
+          (it is the sidebar's own click vocabulary) and `trash_folder` takes
+          `folder_uuid` (it is the drag hook's). Stamping both is cheaper than a
+          shim clause that exists only to rename a key.
+        --%>
+        <.context_menu
+          :if={@can_write}
+          id="kb-folder-context-menu"
+          selector="[data-context-kind=folder]"
+          within="#kb-sidebar"
+          value_name={["folder-uuid", "folder_uuid"]}
+          label="Folder actions"
+        >
+          <.context_menu_button
+            phx-click="start_rename_folder"
+            phx-value-source="sidebar"
+            icon="hero-pencil"
+            label="Rename"
+          />
+          <.context_menu_divider />
+          <.context_menu_button
+            phx-click="trash_folder"
+            data-confirm="Move this folder to the trash, including every note and subfolder inside it?"
+            icon="hero-trash"
+            label="Move to trash"
+            variant="error"
+          />
+        </.context_menu>
+
+        <.context_menu
+          id="kb-note-context-menu"
+          selector="[data-context-kind=item]"
+          within="#kb-sidebar"
+          value_name="file_uuid"
+          label="Note actions"
+        >
+          <.context_menu_button phx-click="open_note" icon="hero-document-text" label="Open" />
+          <.context_menu_button
+            :if={@can_write}
+            phx-click="trash_file"
+            data-confirm="Move this note to the trash?"
+            icon="hero-trash"
+            label="Move to trash"
+            variant="error"
+          />
+        </.context_menu>
 
         <%!--
           Core's explorer renames a folder but cannot delete one, and exposes no

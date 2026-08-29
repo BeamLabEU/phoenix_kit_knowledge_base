@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Right-click menus on the vault tree.** Folders offer Rename and Move to
+  trash, notes offer Open and Move to trash; touch-and-hold does the same on a
+  phone, and the menu names the row it was opened on. Core's explorer already
+  marks every row with the attributes `<.context_menu>` reads, so this is two
+  menu declarations — one element each, not one per row, and no round-trip to
+  open. Confined to the sidebar with `within`, so a right-click on a note title
+  in the search results or the editor still gets the browser's own menu. The
+  folder menu stamps both spellings of the uuid param, because
+  `start_rename_folder` takes `folder-uuid` (the sidebar's click vocabulary) and
+  `trash_folder` takes `folder_uuid` (the drag hook's) — cheaper than a shim
+  clause that exists only to rename a key. One new handler, `open_note`: the
+  tree opens a note through a `<.link patch>` and a context menu cannot, since
+  item hrefs are fixed at render time and only `phx-value-*` varies per row.
+
 - **`[[wiki-links]]` render as links in the editor.** Leaf 0.6.0 decorates them
   and asks which targets exist; the answer goes through the same resolver and
   same-folder tie-break that builds the stored link index, so a link never
