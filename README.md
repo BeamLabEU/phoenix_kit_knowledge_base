@@ -324,7 +324,7 @@ a silently-stripped separator is a note filed somewhere its author didn't
 choose. Writes are atomic — temp file plus rename — so no reader ever sees a
 half-written note.
 
-There are 51 tests on this module alone.
+There are 190 tests on this module alone.
 
 ## Schema
 
@@ -381,7 +381,7 @@ Each a clean addition later; none needs a schema change:
 
 ```bash
 mix deps.get
-mix test          # 156 tests, no database required
+mix test          # 190 tests, no database required
 mix quality       # format, credo --strict, dialyzer
 ```
 
@@ -425,6 +425,7 @@ Working material lives in `dev_docs/`, date-prefixed:
 | [`2026-08-25-knowledge-base-goals.md`](dev_docs/2026-08-25-knowledge-base-goals.md) | The brief, the founding decisions and the reasoning behind them |
 | [`2026-08-25-leaf-collaboration-spec.md`](dev_docs/2026-08-25-leaf-collaboration-spec.md) | What Leaf needs for multi-user editing, staged |
 | [`reports/`](dev_docs/reports) | Dated progress reports |
+| [`reviews/`](dev_docs/reviews) | Dated module reviews — what was checked, what was fixed, what is still open |
 
 [`AGENTS.md`](AGENTS.md) is the contributor guide — the invariants, the
 verification layers and every gotcha that has already cost time. `CLAUDE.md`

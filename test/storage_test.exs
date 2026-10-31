@@ -172,6 +172,15 @@ defmodule PhoenixKitKnowledgeBase.StorageTest do
       assert Storage.folder_from_path("research/My Note.md") == "research"
       assert Storage.folder_from_path("My Note.md") == ""
     end
+
+    test "an uppercase extension is stripped too — the walk accepts .MD, so the title must" do
+      # `markdown?/1` downcases before comparing, so `Note.MD` is indexed; a
+      # case-sensitive strip would give it the title "Note.MD" and a bare
+      # `[[Note]]` would never resolve to it.
+      assert Storage.title_from_path("research/Note.MD") == "Note"
+      assert Storage.drop_extension("Note.Md") == "Note"
+      assert Storage.drop_extension("Note.markdown") == "Note.markdown"
+    end
   end
 
   describe "read and write" do

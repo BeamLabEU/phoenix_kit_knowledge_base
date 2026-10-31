@@ -1081,7 +1081,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end)
   end
 
-  defp drop_extension(path), do: String.replace_suffix(path, ".md", "")
+  defp drop_extension(path), do: Storage.drop_extension(path)
 
   # ── Saving ────────────────────────────────────────────────────────────────
 
@@ -1326,18 +1326,18 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   @doc """
   The Leaf component id for a note.
 
-  Keyed to the note, and both halves of that matter, and both halves of that matter.
-  #
-  # Leaf's editing surfaces are `phx-update="ignore"`, so LiveView never patches
-  # them after mount and a changed `content` assign does nothing to the DOM.
-  # Under a constant id, patching from note A to note B reused the same
-  # component and the same hook, and the editor went on showing A's text while
-  # the server believed it was showing B's — every note opened with whatever was
-  # loaded first.
-  #
-  # Keying the id to the note makes LiveView tear the old component down and
-  # mount a fresh one, and it makes a *stale* message identifiable: Leaf
-  # debounces, so a `:leaf_changed` for the note you just left can arrive after
+  Keyed to the note, and both halves of that matter.
+
+  Leaf's editing surfaces are `phx-update="ignore"`, so LiveView never patches
+  them after mount and a changed `content` assign does nothing to the DOM.
+  Under a constant id, patching from note A to note B reused the same
+  component and the same hook, and the editor went on showing A's text while
+  the server believed it was showing B's — every note opened with whatever was
+  loaded first.
+
+  Keying the id to the note makes LiveView tear the old component down and
+  mount a fresh one, and it makes a *stale* message identifiable: Leaf
+  debounces, so a `:leaf_changed` for the note you just left can arrive after
   you have switched, and saving it would write A's text into B's file.
   """
   @spec editor_id(map() | nil) :: String.t()

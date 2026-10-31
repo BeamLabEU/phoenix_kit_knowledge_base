@@ -112,6 +112,10 @@ defmodule PhoenixKitKnowledgeBase.LinksResolutionTest do
       assert Links.path_key("Research/My Note.md") == "research/my note"
       assert Links.path_key("Note.md") == "note"
     end
+
+    test "an uppercase extension drops the same way, matching the walk" do
+      assert Links.path_key("Research/Note.MD") == "research/note"
+    end
   end
 
   describe "re-resolving links after the vault changes" do

@@ -103,8 +103,13 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
     entries =
       scope
       |> Vaults.list_visible_with_roles()
-      |> Enum.map(fn {vault, role} ->
-        %{vault: vault, role: role, note_count: Notes.count_notes(vault.uuid)}
+      |> then(fn pairs ->
+        # One grouped count for the whole list, not a query per card.
+        counts = Notes.count_notes_by_vault(Enum.map(pairs, fn {vault, _role} -> vault.uuid end))
+
+        Enum.map(pairs, fn {vault, role} ->
+          %{vault: vault, role: role, note_count: Map.get(counts, vault.uuid, 0)}
+        end)
       end)
 
     socket

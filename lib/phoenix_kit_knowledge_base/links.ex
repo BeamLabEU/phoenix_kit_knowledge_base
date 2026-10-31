@@ -128,7 +128,7 @@ defmodule PhoenixKitKnowledgeBase.Links do
   @spec path_key(String.t()) :: String.t()
   def path_key(relative_path) do
     relative_path
-    |> String.replace_suffix(Storage.extension(), "")
+    |> Storage.drop_extension()
     |> Markdown.normalize_title()
   end
 
@@ -315,28 +315,6 @@ defmodule PhoenixKitKnowledgeBase.Links do
       %{uuid: uuid} when uuid == row.source_uuid -> nil
       %{uuid: uuid} -> uuid
     end
-  end
-
-  @doc """
-  Un-resolve links pointing at a note that no longer answers to that name.
-
-  Needed when a note is renamed or moved: the FK's `nilify_all` only fires on
-  delete, so without this, links to the old name would keep pointing at a note
-  that is now called something else.
-  """
-  @spec unresolve_stale(Note.t()) :: non_neg_integer()
-  def unresolve_stale(%Note{} = note) do
-    keys = Enum.uniq([note.title_key, path_key(note.relative_path)])
-
-    {count, _} =
-      repo().update_all(
-        from(l in NoteLink,
-          where: l.target_note_uuid == ^note.uuid and l.target_key not in ^keys
-        ),
-        set: [target_note_uuid: nil, updated_at: DateTime.utc_now()]
-      )
-
-    count
   end
 
   # ── Reads ─────────────────────────────────────────────────────────────────

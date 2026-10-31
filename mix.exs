@@ -75,7 +75,12 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
       # SchemaPrefix, the MarkdownEditor LiveComponent and the migration
       # helpers this module's coordinator calls
       # (`Migrations.Postgres.Helpers.uuid_v7_call/1`).
-      pk_dep(:phoenix_kit, "~> 2.0"),
+      # `~> 2.14` because 2.14.0 is the first published core carrying both
+      # `FolderExplorer`'s `items` attr / `:item` slot (2.13.15+) and the
+      # `<.context_menu>` components the vault tree's right-click menus use.
+      # An older locked core fails at compile time, which is the good failure
+      # mode — at runtime it would be an undefined-slot raise on render.
+      pk_dep(:phoenix_kit, "~> 2.14"),
 
       # Markdown -> HTML for note rendering. Core already depends on MDEx and
       # pins the version; this constraint only has to agree with it.

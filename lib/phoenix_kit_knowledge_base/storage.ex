@@ -285,7 +285,24 @@ defmodule PhoenixKitKnowledgeBase.Storage do
   @doc "The title a note at this path has — its filename without the extension."
   @spec title_from_path(String.t()) :: String.t()
   def title_from_path(relative_path) do
-    relative_path |> Path.basename(@extension) |> String.trim()
+    relative_path |> Path.basename() |> drop_extension() |> String.trim()
+  end
+
+  @doc """
+  A path without its markdown extension.
+
+  Case-insensitive on purpose: the walk accepts `Note.MD` as readily as
+  `Note.md` (`markdown?/1` downcases before comparing), so a title derived
+  with a case-sensitive strip would come out as `"Note.MD"` — and a bare
+  `[[Note]]` would never resolve to it. Strip the same way the walk matches.
+  """
+  @spec drop_extension(String.t()) :: String.t()
+  def drop_extension(path) when is_binary(path) do
+    if String.ends_with?(String.downcase(path), @extension) do
+      binary_part(path, 0, byte_size(path) - byte_size(@extension))
+    else
+      path
+    end
   end
 
   @doc "The folder a note at this path sits in: a relative path, or `\"\"` for the vault root."

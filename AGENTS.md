@@ -138,12 +138,13 @@ that app; what matters here:
 
 **Core's components**
 
-> ⚠️ **The sidebar needs `phoenix_kit` ≥ 2.13.14**, for `FolderExplorer`'s
-> `items` attr and `:item` slot — that is what puts notes in the tree. The
-> declared constraint is still `~> 2.0` because 2.13.14 is not published yet;
-> **bump it the moment it is**, or a Hex install resolves an older core and the
-> sidebar raises on an undefined slot. Until then, local work needs
-> `PHOENIX_KIT_PATH=../phoenix_kit`.
+> **The declared constraint is `~> 2.14`.** 2.14.0 is the first published core
+> carrying both `FolderExplorer`'s `items` attr and `:item` slot (2.13.15 has
+> those; 2.13.14 was never published) and the `<.context_menu>` components the
+> vault tree's right-click menus use. An older locked core fails at compile
+> time, which is the good failure mode — at runtime it would be an
+> undefined-slot raise on render. For cross-repo work against a local
+> checkout: `PHOENIX_KIT_PATH=../phoenix_kit`.
 
 - `PhoenixKitWeb.Components.FolderExplorer` is **not** in core's default
   imports — `use PhoenixKitWeb, :live_view` brings in `Components.Core.*` only.
@@ -202,18 +203,24 @@ that app; what matters here:
   rule plus a paragraph, destroying every property.
 - Leaf's JS is lazy-loaded from jsDelivr by core's vendored `phoenix_kit.js`, not
   bundled. It needs network and a permissive `script-src`.
-- **A `Leaf.Collab.Room` never stops.** Leaf 0.6.0's `{:DOWN, …}` clause drops
-  the session and returns `{:noreply, …}` — no stop, no idle timeout — so a room
-  outlives everyone in it and holds the note's full text for the life of the
-  node. Whatever opens one must call `Collab.close_room/1`.
-- **A `Leaf.Collab.Room` tells nobody when a flush is refused as a conflict.**
-  It sets `conflict: true` on its own state, stops writing, keeps answering
-  `:ok` from `flush_now/1`, and discards the document in `terminate/2`. So a
-  note edited outside the app mid-session silently stops saving and the
-  session's work is lost on the way out. `Collab.Store` broadcasts
-  `Events.note_conflict/2` before returning, which is the only warning that
-  exists — do not remove it without checking whether Leaf has started sending
-  one. Written up in `dev_docs/2026-08-28-leaf-collab-conflict-silent.md`.
+- **A `Leaf.Collab.Room` stops itself once you let it.** Leaf 0.6.0's
+  `{:DOWN, …}` clause dropped the session and returned `{:noreply, …}` — no
+  stop, no idle timeout — so a room outlived everyone in it; that is why
+  `Collab.close_room/1` exists and whatever opens a room must call it. Leaf
+  ≥ 0.8 (what the lock resolves) adds `:idle_after`: the room stops itself
+  when empty, so pass `idle_after:` in `Collab.room_spec/1` when rooms get
+  wired to the UI and `close_room/1` becomes a backstop rather than the only
+  way down.
+- **A conflict is no longer silent in Leaf ≥ 0.8.** 0.6.0 set `conflict: true`,
+  stopped writing, kept answering `:ok` from `flush_now/1`, and discarded the
+  document in `terminate/2`. 0.8.0 answers `{:error, :conflict}` from
+  `flush_now/1` and tells everyone on the topic `{:leaf_conflict, …}` once per
+  conflict (plus `{:leaf_conflict_cleared, …}` on recovery). `Collab.Store`
+  still broadcasts `Events.note_conflict/2` as well — keep it until the
+  LiveView handles `:leaf_conflict` itself; written up in
+  `dev_docs/2026-08-28-leaf-collab-conflict-silent.md`. Note
+  `scripts/verify_collab.exs` pins the 0.6.0 behaviour on purpose, so two of
+  its checks go red against 0.8.0 — that is the signal, not a failure.
 - A suggestion trigger with no `:token` inherits Leaf's default,
   `[\p{L}\p{N}_-]`, which closes the popup at the first space — so `[[` never
   completes a title with a space in it, and `#` never completes `#project/alpha`.

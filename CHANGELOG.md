@@ -99,6 +99,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the reason instead of having its characters silently stripped, which used to
   file `Ideas: Part 2` as `Ideas Part 2`. Adds Obsidian's link-breaking
   characters (`[ ] # ^`) and Windows device names to the refused set.
+- **`phoenix_kit` constraint raised from `~> 2.0` to `~> 2.14`, and the lock
+  updated to 2.65.0.** 2.14.0 is the first published core with the
+  `<.context_menu>` components the vault tree's right-click menus use (and
+  2.13.15+ has `FolderExplorer`'s `items` attr / `:item` slot). With the old
+  lock at 2.13.13 the module did not compile at all.
 
 ### Fixed
 
@@ -164,6 +169,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `:leaf_changed` for the note you just left could arrive after switching and be
   saved into the note now open. Payloads are now matched against the current
   editor id and dropped when stale.
+- **A note named with an uppercase extension (`Note.MD`) was indexed but
+  unlinkable.** The walk accepts `.MD` (it downcases before comparing), but the
+  title and the path-key both stripped only a lowercase `.md`, so the note's
+  title came out as `"Note.MD"` and a bare `[[Note]]` never resolved to it.
+  Extension stripping is now case-insensitive everywhere
+  (`Storage.drop_extension/1`).
+- **The vault list ran one count query per card.** `IndexLive` now fetches all
+  note counts in one grouped query (`Notes.count_notes_by_vault/1`).
+- Removed `Links.unresolve_stale/1` — dead code: rename and move already
+  re-resolve through `Links.reresolve_keys/2`, which covers both directions.
 
 ## [0.1.0] - 2026-08-25
 

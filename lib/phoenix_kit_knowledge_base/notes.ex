@@ -384,6 +384,25 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     repo().one(from(n in Note, where: n.vault_uuid == ^vault_uuid, select: count(n.uuid))) || 0
   end
 
+  @doc """
+  Note counts for several vaults in one query, as `%{vault_uuid => count}`.
+
+  For list pages that show a count per row — one grouped query instead of one
+  `count_notes/1` per card.
+  """
+  @spec count_notes_by_vault([String.t()]) :: %{String.t() => non_neg_integer()}
+  def count_notes_by_vault([]), do: %{}
+
+  def count_notes_by_vault(vault_uuids) do
+    from(n in Note,
+      where: n.vault_uuid in ^vault_uuids,
+      group_by: n.vault_uuid,
+      select: {n.vault_uuid, count(n.uuid)}
+    )
+    |> repo().all()
+    |> Map.new()
+  end
+
   @doc "Fetch a note scoped to its vault, or `nil` (also for a malformed uuid)."
   @spec get_note(String.t(), String.t() | nil) :: Note.t() | nil
   def get_note(_vault_uuid, nil), do: nil
