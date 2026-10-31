@@ -31,10 +31,11 @@ The one thing that was genuinely broken was the build itself: **the committed
 | Lint | `mix credo --strict` | no issues |
 | Format | `mix format --check-formatted` | clean |
 
-All against `phoenix_kit` 2.65.0 and `leaf` 0.8.0 (what the updated lock
-resolves). Layers 2 and 3 (`scripts/verify_*.exs`, `smoke_http.exs`) need the
-host app and a live Postgres, which this environment does not have — **not run
-here**.
+All against `phoenix_kit` 3.0.0 and `leaf` 0.8.0 (what the final lock
+resolves — see the follow-up below). Layers 2 and 3 (`scripts/verify_*.exs`,
+`smoke_http.exs`) need the host app and a live Postgres, which this
+environment does not have — **not run here**. Dialyzer not run (no cached
+PLT; cold build over core 3.0).
 
 ## Fixed in this pass
 
@@ -101,6 +102,25 @@ New from this pass:
   Note that `scripts/verify_collab.exs` pins the 0.6.0 silent-conflict behavior
   on purpose — two of its checks will go red against leaf 0.8.0. That is the
   signal, not a failure.
+
+## Same-day follow-up: all deps to latest
+
+`mix deps.update --all` moved everything the constraints allowed (mdex
+0.14.6, ex_doc 0.40.4, yaml_elixir 2.12.2, dialyxir 1.4.8, makeup, mdex_native);
+leaf was already at its latest 0.x (0.8.0). The only major left was
+`phoenix_kit` 3.0.0, capped by our own `~> 2.14` pin, so the pin became
+`>= 2.14.0 and < 4.0.0` and the lock now resolves 3.0.0. Checked before
+bumping: 3.0.0 still ships `Helpers.uuid_v7_call/1`, `FolderExplorer` with
+`items`/`:item`, `context_menu.ex`, `RepoHelper`/`PubSubHelper`/`SchemaPrefix`/
+`Utils.Routes`, keeps `file_references/0` and `expected_schema/0` optional,
+and still discovers module tables via `migration_module/0` +
+`migrated_version_runtime/1`/`current_version/0` — exactly this module's
+coordinator interface. 3.0's breaking changes (legacy machine-API names,
+DB-backed email templates, core no longer creating module tables) touch none
+of what this module uses. Gate re-run green on 3.0.0: 190 tests, credo
+--strict, format, compile --warnings-as-errors. Runtime caveat: a host moving
+to core 3.0 must be at V225 (2.65.0) first — core raises `BelowFloorError`
+below that; that is a host-upgrade step, not a code change here.
 
 ## What I could not verify here
 

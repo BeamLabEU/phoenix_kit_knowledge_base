@@ -138,12 +138,17 @@ that app; what matters here:
 
 **Core's components**
 
-> **The declared constraint is `~> 2.14`.** 2.14.0 is the first published core
-> carrying both `FolderExplorer`'s `items` attr and `:item` slot (2.13.15 has
-> those; 2.13.14 was never published) and the `<.context_menu>` components the
-> vault tree's right-click menus use. An older locked core fails at compile
-> time, which is the good failure mode — at runtime it would be an
-> undefined-slot raise on render. For cross-repo work against a local
+> **The declared constraint is `>= 2.14.0 and < 4.0.0`.** 2.14.0 is the first
+> published core carrying both `FolderExplorer`'s `items` attr and `:item`
+> slot (2.13.15 has those; 2.13.14 was never published) and the
+> `<.context_menu>` components the vault tree's right-click menus use. An
+> older locked core fails at compile time, which is the good failure mode —
+> at runtime it would be an undefined-slot raise on render. The upper bound
+> admits core 3.x: verified against 3.0.0, which still calls
+> `migration_module/0` + `migrated_version_runtime/1` / `current_version/0`
+> for module-owned tables — this module's coordinator already speaks that.
+> Core 3.0 requires an existing install to be at V225 (2.65.0) first; that is
+> a host-upgrade concern, not a code one. For cross-repo work against a local
 > checkout: `PHOENIX_KIT_PATH=../phoenix_kit`.
 
 - `PhoenixKitWeb.Components.FolderExplorer` is **not** in core's default

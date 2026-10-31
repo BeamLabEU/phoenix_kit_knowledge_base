@@ -99,11 +99,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the reason instead of having its characters silently stripped, which used to
   file `Ideas: Part 2` as `Ideas Part 2`. Adds Obsidian's link-breaking
   characters (`[ ] # ^`) and Windows device names to the refused set.
-- **`phoenix_kit` constraint raised from `~> 2.0` to `~> 2.14`, and the lock
-  updated to 2.65.0.** 2.14.0 is the first published core with the
-  `<.context_menu>` components the vault tree's right-click menus use (and
-  2.13.15+ has `FolderExplorer`'s `items` attr / `:item` slot). With the old
-  lock at 2.13.13 the module did not compile at all.
+- **`phoenix_kit` constraint raised from `~> 2.0` to `>= 2.14.0 and < 4.0.0`,
+  and all deps updated to their latest allowed versions.** 2.14.0 is the first
+  published core with the `<.context_menu>` components the vault tree's
+  right-click menus use (and 2.13.15+ has `FolderExplorer`'s `items` attr /
+  `:item` slot); with the old lock at 2.13.13 the module did not compile at
+  all. The lock now resolves phoenix_kit 3.0.0 (compile-, test- and
+  credo-verified; core 3.0 still drives module-owned tables through
+  `migration_module/0`, which this module implements) plus mdex 0.14.6,
+  ex_doc 0.40.4, yaml_elixir 2.12.2, dialyxir 1.4.8. Hosts upgrading to core
+  3.0 must be at V225 (core 2.65.0) first — core refuses lower with
+  `BelowFloorError`.
 
 ### Fixed
 
