@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The vault page works on a phone.** It was wider than the screen (the four
+  labelled header buttons), and the whole sidebar — tree, tags, unresolved
+  links — stacked above the note, so the editor started below the first screen.
+  Below `sm` the header buttons are icons (labels kept as tooltips and for
+  screen readers). Below `lg`, with a note open, the sidebar waits behind a
+  "Files" button at the top, and opening a note puts it away again; the tree
+  takes the full width instead of core's fixed 240px. Backlinks and outgoing
+  links no longer vanish below `xl`: they follow the note, in its column on
+  `lg`. The vault's directory is truncated, with the full path on hover,
+  rather than broken mid-word. Still no JavaScript: it is one assign.
+
 ### Added
 
 - **Right-click menus on the vault tree.** Folders offer Rename and Move to
