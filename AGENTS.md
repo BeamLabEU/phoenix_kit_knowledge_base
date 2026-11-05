@@ -40,7 +40,7 @@ lib/phoenix_kit_knowledge_base/
   collab/store.ex   where a live document goes: Notes -> disk -> index
   migrations.ex     versioned coordinator (the host's migration calls into this)
   schemas/          five Ecto schemas, all `use PhoenixKit.SchemaPrefix`
-  web/              three LiveViews
+  web/              three LiveViews, NotesPanel (the drop-in widget) + Components
 scripts/smoke_http.exs                   renders every page as a logged-in user
 scripts/verify_links.exs                 link resolution against a real database
 scripts/verify_collab.exs                live editing: what a room writes and refuses

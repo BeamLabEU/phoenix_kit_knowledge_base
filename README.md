@@ -182,6 +182,52 @@ Removing a vault deletes its row and its index — **not its files**. Notes are 
 durable artifact; a mis-click in a web UI should not `rm -rf` somebody's writing.
 Re-create the vault with the same slug and rescan to get it all back.
 
+## Drop-in notes (`notes_panel`)
+
+Notes about one place — a client, a project, a page — dropped into any page of
+your app:
+
+```heex
+<PhoenixKitKnowledgeBase.Web.Components.notes_panel
+  id="client-notes"
+  current_user={@current_scope.user}
+  path={["CRM", "Clients", @client.id]}
+  label="Notes"
+/>
+```
+
+`path` says where the notes live: the first segment is the vault, the rest the
+folder the panel shows. Nothing is created until someone writes the first note
+or makes the first folder; then the vault and the folder chain appear. People
+make subfolders and write notes in the panel itself, with autosave. They never
+see above `path`. Several panels share a vault by sharing its first segment —
+one `CRM` vault with a folder per client.
+
+- **Everyone here / Only me.** Shared notes live in an organisation vault of
+  that name; private ones in each person's own vault of that name.
+  `visibility_options` and `default_visibility` choose what is offered.
+- **Who may use shared notes** is your call:
+  `config :phoenix_kit_knowledge_base, :authorize, {MyApp.Notes, :can?}`,
+  called as `can?(action, user, path)` with `action` `:view` or `:edit`.
+  Unconfigured, any signed-in user may. A hook that raises or answers anything
+  but `true`/`false` is a no. It grants access through the panel only; the
+  admin pages keep their own rules (managers and members).
+- **Keep the path stable.** Notes are kept by path, so a segment built from a
+  name that changes starts a new, empty folder when it does; the old notes stay
+  where they were. Prefer an id.
+- **Inside the panel only.** `[[` and `#` suggestions, and which `[[links]]`
+  exist, come from the panel's own folder — titles from elsewhere in the vault
+  are never shown. A followed link opens the note in the panel, or offers to
+  create it there.
+- **Admins** (the `knowledge_base` permission and a role on the vault) also get
+  a link to the whole vault on the admin pages.
+- **Needs Leaf 0.11** (its `notify` option) to edit in place. With an older Leaf
+  the panel shows notes read-only rather than send the editor's messages to
+  your page.
+
+The panel polls (`poll`, default 5 s) because a component cannot subscribe to
+anything, and shows every message inline. See `PhoenixKitKnowledgeBase.Web.NotesPanel`.
+
 ## File names
 
 The filename **is** the title, plus `.md` — Obsidian's scheme, so a note created

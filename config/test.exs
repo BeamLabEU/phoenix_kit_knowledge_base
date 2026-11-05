@@ -35,3 +35,10 @@ config :phoenix_kit_knowledge_base, PhoenixKitKnowledgeBase.Test.Repo,
 
 # `PhoenixKit.RepoHelper` resolves this; without it every context call raises.
 config :phoenix_kit, repo: PhoenixKitKnowledgeBase.Test.Repo
+
+# A bare endpoint for `Phoenix.LiveViewTest` (`PhoenixKitKnowledgeBase.Test.Endpoint`).
+config :phoenix_kit_knowledge_base, PhoenixKitKnowledgeBase.Test.Endpoint,
+  secret_key_base: String.duplicate("kb-test-secret-key-", 4),
+  live_view: [signing_salt: "kb-test-live-salt"],
+  pubsub_server: PhoenixKit.PubSub,
+  server: false

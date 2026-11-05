@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`notes_panel`: notes you can drop into any page.**
+  `<PhoenixKitKnowledgeBase.Web.Components.notes_panel path={["CRM", "Clients", id]} …/>`
+  shows one vault folder, named by `path`, with its subfolders and notes; the
+  first note or folder creates the vault and the chain. Notes open and autosave
+  in the panel (Leaf with `notify`, so the host page never receives the
+  editor's messages; with a Leaf that predates `notify` the panel is read-only).
+  "Everyone here" / "Only me", the host's `:authorize` hook asked on every
+  event, a folder fence no event can step outside, `[[`/`#` suggestions and
+  link resolution limited to the panel's folder, rename, trash, and the same
+  stale-file guard as the vault page ("Take theirs" / "Keep mine").
+  `Links.resolver_from/1` and `Notes.list_notes(under: folder)` are new.
+
 - **`Places`: where a drop-in notes panel's notes live** (groundwork for the
   panel). A path such as `["CRM", "Clients", "Acme"]` names a vault and a folder
   chain inside it, created on first use: shared ("everyone here") in an

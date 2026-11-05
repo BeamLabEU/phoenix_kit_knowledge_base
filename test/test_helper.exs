@@ -57,6 +57,8 @@ if repo_available do
     log: false
   )
 
+  {:ok, _} = PhoenixKitKnowledgeBase.Test.Endpoint.start_link()
+
   Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
 
   ExUnit.start()

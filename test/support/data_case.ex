@@ -35,12 +35,17 @@ defmodule PhoenixKitKnowledgeBase.DataCase do
   setup tags do
     pid = Sandbox.start_owner!(TestRepo, shared: not tags[:async])
 
+    # The lock's Leaf may predate `notify`; the panel's editor path is what these
+    # tests exercise, with Leaf's messages delivered the way `notify` would.
+    Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, true)
+
     root = Path.join(System.tmp_dir!(), "kb_it_#{System.unique_integer([:positive])}")
     File.mkdir_p!(root)
     previous = Application.get_env(:phoenix_kit_knowledge_base, :root)
     Application.put_env(:phoenix_kit_knowledge_base, :root, root)
 
     on_exit(fn ->
+      Application.delete_env(:phoenix_kit_knowledge_base, :leaf_notify)
       Sandbox.stop_owner(pid)
       File.rm_rf(root)
 
