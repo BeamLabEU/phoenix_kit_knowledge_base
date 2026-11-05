@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Places`: where a drop-in notes panel's notes live** (groundwork for the
+  panel). A path such as `["CRM", "Clients", "Acme"]` names a vault and a folder
+  chain inside it, created on first use: shared ("everyone here") in an
+  organisation vault of that name, private ("only me") in the person's own
+  vault of that name. Migration V2 adds `vaults.path_key` with one shared vault
+  per name and one private vault per person per name; two people creating the
+  same place at once end up in one vault, with no stray directory. Shared places
+  ask the host's `config :phoenix_kit_knowledge_base, :authorize, {M, :f}` hook,
+  which fails closed. Integration tests against PostgreSQL now run alongside the
+  unit suite (`test/integration/`), excluded when no database answers.
+
 - **Right-click menus on the vault tree.** Folders offer Rename and Move to
   trash, notes offer Open and Move to trash; touch-and-hold does the same on a
   phone, and the menu names the row it was opened on. Core's explorer already

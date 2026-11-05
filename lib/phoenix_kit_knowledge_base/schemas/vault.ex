@@ -44,6 +44,9 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Vault do
     # changed their email address would be a fine way to lose a vault.
     field(:directory, :string)
     field(:last_scanned_at, :utc_datetime_usec)
+    # Set only on vaults a notes panel created: the slugified first segment of
+    # its path. Not cast from params — `Places` writes it.
+    field(:path_key, :string)
 
     has_many(:members, VaultMember, foreign_key: :vault_uuid, references: :uuid)
     has_many(:notes, Note, foreign_key: :vault_uuid, references: :uuid)
@@ -93,6 +96,20 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Vault do
     # external edits and fight over the index forever.
     |> unique_constraint(:directory, message: "is already used by another vault")
     |> validate_owner_matches_scope()
+  end
+
+  @doc """
+  Marks a vault as the one a notes panel's path names (`Places`). Never cast:
+  the key is derived from the path, not taken from a form.
+
+  Both partial unique indexes are declared, so two people creating the same
+  place's vault at once get a changeset error to recover from — not a raise.
+  """
+  def put_path_key(changeset, path_key) do
+    changeset
+    |> put_change(:path_key, path_key)
+    |> unique_constraint(:path_key, name: :phoenix_kit_kb_vaults_shared_path_key_index)
+    |> unique_constraint(:path_key, name: :phoenix_kit_kb_vaults_private_path_key_index)
   end
 
   # A system vault with an owner, or a personal vault without one, would make
