@@ -25,8 +25,12 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
   end
 
   defp mount_panel(conn, user, opts \\ []) do
+    {locale, opts} = Keyword.pop(opts, :locale)
     opts = Keyword.merge([path: @path, poll: 0], opts)
-    live_isolated(conn, HostLive, session: %{"user_uuid" => user && user.uuid, "opts" => opts})
+
+    live_isolated(conn, HostLive,
+      session: %{"user_uuid" => user && user.uuid, "opts" => opts, "locale" => locale}
+    )
   end
 
   # An event as the browser could send it, to the panel (not the host page).
@@ -191,6 +195,46 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       fire(lv, "no_such_event", %{})
       assert Process.alive?(lv.pid)
       assert vaults() == []
+    end
+  end
+
+  describe "in the reader's language" do
+    test "Russian: the panel, the default title, and the editor's own toolbar", %{
+      conn: conn,
+      me: me
+    } do
+      {:ok, lv, html} = mount_panel(conn, me, locale: "ru")
+      assert html =~ "Только я"
+      assert html =~ "Здесь пока нет заметок."
+
+      html = fire(lv, "new_note")
+      [vault] = vaults()
+      assert [%{title: "Заметка 1"}] = Notes.list_notes(vault.uuid)
+      # The Leaf inside the panel is given this module's catalogue.
+      assert html =~ "Жирный"
+
+      fire(lv, "close_note")
+      fire(lv, "new_note")
+      titles = vault.uuid |> Notes.list_notes() |> Enum.map(& &1.title) |> Enum.sort()
+      assert titles == ["Заметка 1", "Заметка 2"]
+    end
+
+    test "Estonian", %{conn: conn, me: me} do
+      {:ok, lv, html} = mount_panel(conn, me, locale: "et")
+      assert html =~ "Ainult mina"
+      fire(lv, "new_note")
+      [vault] = vaults()
+      assert [%{title: "Märge 1"}] = Notes.list_notes(vault.uuid)
+    end
+
+    test "dates use the reader's month names", %{conn: conn, me: me} do
+      note!(me, "Dated")
+      {:ok, _lv, html} = mount_panel(conn, me, locale: "ru")
+
+      month =
+        Enum.at(~w(янв фев мар апр мая июн июл авг сен окт ноя дек), Date.utc_today().month - 1)
+
+      assert html =~ month
     end
   end
 

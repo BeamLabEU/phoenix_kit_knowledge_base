@@ -44,6 +44,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   """
 
   use PhoenixKitWeb, :live_component
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitKnowledgeBase.{Links, Markdown, Notes, Paths, Places, Vaults}
@@ -266,7 +267,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp check_open_note(%{assigns: %{note: note, vault: vault}} = socket) when not is_nil(vault) do
     case Notes.get_note(vault.uuid, note.uuid) do
       nil ->
-        socket |> close_note() |> notice(:info, "That note was moved or deleted.")
+        socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
       %Note{content_hash: hash} when hash != note.content_hash ->
         assign(socket, :remote_change, true)
@@ -391,7 +392,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           socket
           |> close_note()
           |> load_listing()
-          |> notice(:info, "Moved “#{note.title}” to the vault's trash.")
+          |> notice(:info, gettext("Moved “%{title}” to the vault's trash.", title: note.title))
 
         {:error, reason} ->
           notice(socket, :error, error_message(reason))
@@ -404,7 +405,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     with_open_note(socket, :view, fn socket, vault, note ->
       case Notes.get_note(vault.uuid, note.uuid) do
         nil ->
-          socket |> close_note() |> notice(:info, "That note was moved or deleted.")
+          socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
         fresh ->
           send_update(Leaf,
@@ -456,17 +457,19 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end
   end
 
-  # "Note N" after the highest N already in the folder. Two people clicking at
-  # once both pick the same N; the second finds the file taken and moves on to
-  # the next number rather than failing.
+  # "Note N" after the highest N already in the folder — in the reader's
+  # language ("Заметка 3"), since the title is the file name they see. Two
+  # people clicking at once both pick the same N; the second finds the file
+  # taken and moves on to the next number rather than failing.
   defp create_note(socket, vault, :numbered) do
     folder = socket.assigns.current_folder
+    numbered = numbered_title_regex()
 
     first =
       vault.uuid
       |> Notes.list_notes(folder_path: folder)
       |> Enum.flat_map(fn note ->
-        case Regex.run(~r/^Note (\d+)$/, note.title) do
+        case Regex.run(numbered, note.title) do
           [_, n] -> [String.to_integer(n)]
           nil -> []
         end
@@ -476,7 +479,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
     Enum.reduce_while(first..(first + @numbered_attempts - 1), {:error, :already_exists}, fn n,
                                                                                              _ ->
-      case create_note(socket, vault, "Note #{n}") do
+      case create_note(socket, vault, numbered_title(n)) do
         {:error, :already_exists} = taken -> {:cont, taken}
         result -> {:halt, result}
       end
@@ -491,6 +494,20 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     )
   end
 
+  defp numbered_title(n), do: gettext("Note %{number}", number: n)
+
+  # The translated "Note %{number}" with the number as a capture, so the next
+  # number is found whatever the language is.
+  defp numbered_title_regex do
+    [before, after_] =
+      case String.split(gettext("Note %{number}", number: "\0"), "\0", parts: 2) do
+        [before, after_] -> [before, after_]
+        _ -> ["Note ", ""]
+      end
+
+    Regex.compile!("^" <> Regex.escape(before) <> "(\\d+)" <> Regex.escape(after_) <> "$", "u")
+  end
+
   # Access is asked again on every event: it is the host's, and may have
   # changed since the panel rendered.
   defp with_access(socket, action, fun) do
@@ -499,7 +516,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     if place && Places.authorize(action, user, place) do
       {:noreply, fun.(socket)}
     else
-      {:noreply, notice(socket, :error, "You cannot do that here.")}
+      {:noreply, notice(socket, :error, gettext("You cannot do that here."))}
     end
   end
 
@@ -555,7 +572,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         else
           socket
           |> assign(:save_status, :unsaved)
-          |> notice(:error, "You cannot change these notes.")
+          |> notice(:error, gettext("You cannot change these notes."))
         end
 
       # `:stale` is an edit from a note that is no longer open; `:unchanged` is
@@ -690,7 +707,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             else: note.title
           ),
         label: note.title,
-        sublabel: if(note.folder_path == "", do: "top level", else: note.folder_path),
+        sublabel: if(note.folder_path == "", do: gettext("top level"), else: note.folder_path),
         icon: "hero-document-text"
       }
     end)
@@ -710,7 +727,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       %{
         value: tag,
         label: "##{tag}",
-        sublabel: "#{count} #{if count == 1, do: "note", else: "notes"}",
+        sublabel: ngettext("%{count} note", "%{count} notes", count),
         icon: "hero-hashtag"
       }
     end)
@@ -728,32 +745,36 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
              exists: false,
              title:
                if(socket.assigns.can_edit?,
-                 do: "No note with this title here yet — click to create it",
-                 else: "No note with this title here"
+                 do: gettext("No note with this title here yet — click to create it"),
+                 else: gettext("No note with this title here")
                )
            }}
 
         note ->
           {target,
-           %{exists: true, title: "Open “#{Path.rootname(Path.basename(note.relative_path))}”"}}
+           %{
+             exists: true,
+             title:
+               gettext("Open “%{title}”", title: Path.rootname(Path.basename(note.relative_path)))
+           }}
       end
     end)
   end
 
-  defp error_message(:unauthorized), do: "You cannot do that here."
-  defp error_message(:already_exists), do: "Something with that name is already here."
-  defp error_message(:blank), do: "Give it a name."
+  defp error_message(:unauthorized), do: gettext("You cannot do that here.")
+  defp error_message(:already_exists), do: gettext("Something with that name is already here.")
+  defp error_message(:blank), do: gettext("Give it a name.")
 
   defp error_message({:forbidden_characters, chars}),
-    do: "A name cannot contain #{Enum.join(chars, " ")}."
+    do: gettext("A name cannot contain %{characters}.", characters: Enum.join(chars, " "))
 
-  defp error_message(:leading_dot), do: "A name cannot start with a dot."
-  defp error_message(:trailing_dot), do: "A name cannot end with a dot."
-  defp error_message(:too_long), do: "That name is too long."
-  defp error_message(:reserved), do: "That name is reserved by the operating system."
+  defp error_message(:leading_dot), do: gettext("A name cannot start with a dot.")
+  defp error_message(:trailing_dot), do: gettext("A name cannot end with a dot.")
+  defp error_message(:too_long), do: gettext("That name is too long.")
+  defp error_message(:reserved), do: gettext("That name is reserved by the operating system.")
   defp error_message({:folder, reason}), do: error_message(reason)
-  defp error_message(%Ecto.Changeset{}), do: "These notes could not be set up."
-  defp error_message(other), do: "That did not work (#{inspect(other)})."
+  defp error_message(%Ecto.Changeset{}), do: gettext("These notes could not be set up.")
+  defp error_message(other), do: gettext("That did not work (%{reason}).", reason: inspect(other))
 
   # ── Render ────────────────────────────────────────────────────────────────
 
@@ -764,7 +785,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     ~H"""
     <div id={@id} class={["alert alert-warning text-sm", @class]}>
       <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
-      <span>This notes panel's <code>path</code> is not usable: {inspect(@config_error)}</span>
+      <span>{gettext("This notes panel's path is not usable: %{reason}",
+        reason: inspect(@config_error)
+      )}</span>
     </div>
     """
   end
@@ -784,7 +807,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             :if={length(@visibility_options) > 1}
             class="join"
             role="group"
-            aria-label="Whose notes"
+            aria-label={gettext("Whose notes")}
           >
             <button
               :for={v <- @visibility_options}
@@ -798,15 +821,15 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
               ]}
               aria-pressed={to_string(v == @visibility)}
             >
-              {if v == :private, do: "Only me", else: "Everyone here"}
+              {if v == :private, do: gettext("Only me"), else: gettext("Everyone here")}
             </button>
           </div>
           <a
             :if={@admin_href}
             href={@admin_href}
             class="btn btn-ghost btn-xs"
-            title="Open the whole vault"
-            aria-label="Open the whole vault"
+            title={gettext("Open the whole vault")}
+            aria-label={gettext("Open the whole vault")}
           >
             <.icon name="hero-arrow-top-right-on-square" class="w-4 h-4" />
           </a>
@@ -827,14 +850,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           phx-click="dismiss"
           phx-target={@myself}
           class="btn btn-ghost btn-xs"
-          aria-label="Dismiss"
+          aria-label={gettext("Dismiss")}
         >
           <.icon name="hero-x-mark" class="w-4 h-4" />
         </button>
       </div>
 
       <p :if={not @can_view?} class="text-sm text-base-content/60 italic">
-        You do not have access to these notes.
+        {gettext("You do not have access to these notes.")}
       </p>
 
       <%= if @can_view? do %>
@@ -854,7 +877,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       <nav
         :if={crumbs(@place, @current_folder) != []}
         class="flex flex-wrap items-center gap-1 text-sm"
-        aria-label="Folder"
+        aria-label={gettext("Folder")}
       >
         <%= for {crumb, index} <- Enum.with_index(crumbs(@place, @current_folder)) do %>
           <span :if={index > 0} class="text-base-content/40">/</span>
@@ -897,14 +920,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
               class="text-xs text-base-content/50 shrink-0"
               datetime={DateTime.to_iso8601(note.updated_at)}
             >
-              {Calendar.strftime(note.updated_at, "%d %b")}
+              {short_date(note.updated_at)}
             </time>
           </button>
         </li>
       </ul>
 
       <p :if={@folders == [] and @notes == []} class="text-sm text-base-content/50 italic">
-        {if @can_edit?, do: "No notes here yet.", else: "No notes here."}
+        {if @can_edit?, do: gettext("No notes here yet."), else: gettext("No notes here.")}
       </p>
 
       <form
@@ -918,16 +941,16 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           type="text"
           name="name"
           value={@draft_title}
-          placeholder="Folder name"
+          placeholder={gettext("Folder name")}
           class="input input-sm input-bordered flex-1 min-w-0"
           autofocus
           required
         />
         <button type="submit" class="btn btn-sm btn-primary">
-          Create folder
+          {gettext("Create folder")}
         </button>
         <button type="button" phx-click="cancel" phx-target={@myself} class="btn btn-sm btn-ghost">
-          Cancel
+          {gettext("Cancel")}
         </button>
       </form>
 
@@ -938,7 +961,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           phx-target={@myself}
           class="btn btn-sm btn-primary"
         >
-          <.icon name="hero-document-plus" class="w-4 h-4" /> Note
+          <.icon name="hero-document-plus" class="w-4 h-4" /> {gettext("Note")}
         </button>
         <button
           type="button"
@@ -947,7 +970,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           phx-target={@myself}
           class="btn btn-sm btn-ghost"
         >
-          <.icon name="hero-folder-plus" class="w-4 h-4" /> Folder
+          <.icon name="hero-folder-plus" class="w-4 h-4" /> {gettext("Folder")}
         </button>
       </div>
     </div>
@@ -963,8 +986,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           phx-click="close_note"
           phx-target={@myself}
           class="btn btn-ghost btn-xs"
-          title="Back to the list"
-          aria-label="Back to the list"
+          title={gettext("Back to the list")}
+          aria-label={gettext("Back to the list")}
         >
           <.icon name="hero-arrow-left" class="w-4 h-4" />
         </button>
@@ -984,9 +1007,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             autofocus
             required
           />
-          <button type="submit" class="btn btn-sm btn-primary">Rename</button>
+          <button type="submit" class="btn btn-sm btn-primary">{gettext("Rename")}</button>
           <button type="button" phx-click="cancel" phx-target={@myself} class="btn btn-sm btn-ghost">
-            Cancel
+            {gettext("Cancel")}
           </button>
         </form>
 
@@ -996,7 +1019,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           phx-click="start_rename"
           phx-target={@myself}
           class="font-medium truncate flex-1 min-w-0 text-left hover:underline decoration-dotted"
-          title="Rename"
+          title={gettext("Rename")}
         >
           {@note.title}
         </button>
@@ -1014,8 +1037,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             phx-click="start_rename"
             phx-target={@myself}
             class="btn btn-ghost btn-xs"
-            title="Rename"
-            aria-label="Rename"
+            title={gettext("Rename")}
+            aria-label={gettext("Rename")}
           >
             <.icon name="hero-pencil" class="w-4 h-4" />
           </button>
@@ -1023,10 +1046,10 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             type="button"
             phx-click="trash_note"
             phx-target={@myself}
-            data-confirm="Move this note to the vault's trash?"
+            data-confirm={gettext("Move this note to the vault's trash?")}
             class="btn btn-ghost btn-xs text-error"
-            title="Move to trash"
-            aria-label="Move to trash"
+            title={gettext("Move to trash")}
+            aria-label={gettext("Move to trash")}
           >
             <.icon name="hero-trash" class="w-4 h-4" />
           </button>
@@ -1034,10 +1057,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       </div>
 
       <div :if={@conflict} class="alert alert-warning text-sm py-2 flex-wrap">
-        <span class="min-w-0">This note was changed somewhere else, so this edit was not saved.</span>
+        <span class="min-w-0">
+          {gettext("This note was changed somewhere else, so this edit was not saved.")}
+        </span>
         <div class="flex gap-1">
           <button type="button" phx-click="reload_note" phx-target={@myself} class="btn btn-xs">
-            Take theirs
+            {gettext("Take theirs")}
           </button>
           <button
             type="button"
@@ -1045,21 +1070,21 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             phx-target={@myself}
             class="btn btn-xs btn-warning"
           >
-            Keep mine
+            {gettext("Keep mine")}
           </button>
         </div>
       </div>
 
       <div :if={@remote_change and not @conflict} class="alert alert-info text-sm py-2 flex-wrap">
-        <span class="min-w-0">Someone else changed this note.</span>
+        <span class="min-w-0">{gettext("Someone else changed this note.")}</span>
         <button type="button" phx-click="reload_note" phx-target={@myself} class="btn btn-xs">
-          Show their version
+          {gettext("Show their version")}
         </button>
       </div>
 
       <div :if={not leaf_notify?()} class="space-y-2">
         <p class="text-xs text-base-content/60">
-          Editing here needs Leaf 0.11 or later; this is the note as saved.
+          {gettext("Editing here needs Leaf 0.11 or later; this is the note as saved.")}
         </p>
         <pre class="whitespace-pre-wrap break-words text-sm rounded-box bg-base-200 p-3">{@content}</pre>
       </div>
@@ -1071,14 +1096,15 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         content={@content}
         mode={:hybrid}
         preset={:simple}
-        suggestions={VaultLive.suggestion_configs()}
+        suggestions={suggestion_configs()}
         wiki_links={%{resolve: true, follow: :click}}
         deny={[:visual_mode, :html_mode]}
-        placeholder="Write here. Link with [[Note title]], tag with #tag."
+        placeholder={gettext("Write here. Link with [[Note title]], tag with #tag.")}
         height="40vh"
         debounce={500}
         readonly={not @can_edit?}
         notify={{__MODULE__, @id}}
+        gettext_backend={PhoenixKitKnowledgeBase.Gettext}
         autofocus={@just_created?}
       />
     </article>
@@ -1110,8 +1136,35 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     if below == [], do: [], else: [root | below]
   end
 
-  defp save_label(:saved), do: "Saved"
-  defp save_label(:unsaved), do: "Not saved"
+  # "05 Nov", with the month in the reader's language.
+  defp short_date(datetime) do
+    Calendar.strftime(datetime, "%d %b", abbreviated_month_names: &month_abbreviation/1)
+  end
+
+  defp month_abbreviation(1), do: pgettext("month", "Jan")
+  defp month_abbreviation(2), do: pgettext("month", "Feb")
+  defp month_abbreviation(3), do: pgettext("month", "Mar")
+  defp month_abbreviation(4), do: pgettext("month", "Apr")
+  defp month_abbreviation(5), do: pgettext("month", "May")
+  defp month_abbreviation(6), do: pgettext("month", "Jun")
+  defp month_abbreviation(7), do: pgettext("month", "Jul")
+  defp month_abbreviation(8), do: pgettext("month", "Aug")
+  defp month_abbreviation(9), do: pgettext("month", "Sep")
+  defp month_abbreviation(10), do: pgettext("month", "Oct")
+  defp month_abbreviation(11), do: pgettext("month", "Nov")
+  defp month_abbreviation(12), do: pgettext("month", "Dec")
+
+  # The vault page's configs, with their popup headings in the reader's language.
+  defp suggestion_configs do
+    Enum.map(VaultLive.suggestion_configs(), fn
+      %{label: "Notes"} = config -> %{config | label: gettext("Notes")}
+      %{label: "Tags"} = config -> %{config | label: gettext("Tags")}
+      config -> config
+    end)
+  end
+
+  defp save_label(:saved), do: gettext("Saved")
+  defp save_label(:unsaved), do: gettext("Not saved")
 
   defp save_class(:saved), do: "badge-ghost"
   defp save_class(:unsaved), do: "badge-warning"

@@ -17,6 +17,10 @@ defmodule PhoenixKitKnowledgeBase.Test.HostLive do
         uuid -> Repo.get(PhoenixKit.Users.Auth.User, uuid)
       end
 
+    # A host sets the locale for its own process, per request; the panel and
+    # the Leaf inside it read it from there.
+    if locale = session["locale"], do: Gettext.put_locale(locale)
+
     {:ok, assign(socket, user: user, opts: session["opts"] || [])}
   end
 
