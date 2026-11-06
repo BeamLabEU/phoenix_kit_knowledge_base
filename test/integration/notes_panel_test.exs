@@ -108,23 +108,53 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
   end
 
   describe "creating" do
-    test "the first note creates the vault, the folder chain and the file", %{conn: conn, me: me} do
+    test "one click makes \"Note 1\": the vault, the folder chain and the file", %{
+      conn: conn,
+      me: me
+    } do
       {:ok, lv, _} = mount_panel(conn, me)
-      fire(lv, "start", %{"what" => "note"})
-      html = submit(lv, "create", %{"title" => "First call"})
+      html = fire(lv, "new_note")
 
       [vault] = vaults()
       assert vault.name == "CRM"
       [note] = Notes.list_notes(vault.uuid)
+      assert note.title == "Note 1"
       assert note.folder_path == "Clients/Acme"
+
+      assert File.exists?(
+               Path.join(Storage.vault_path(vault.directory), "Clients/Acme/Note 1.md")
+             )
+
+      # Opened straight away, in an editor keyed to this panel and this note.
+      assert html =~ NotesPanel.editor_id("panel", note)
+    end
+
+    test "the next note takes the next free number in the folder", %{conn: conn, me: me} do
+      note!(me, "Note 1")
+      note!(me, "Note 3")
+      note!(me, "Note 7", ["CRM", "Clients", "Globex"])
+
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "new_note")
+      fire(lv, "close_note")
+      fire(lv, "new_note")
+
+      [vault] = vaults()
+      titles = vault.uuid |> Notes.list_notes(folder_path: "Clients/Acme") |> Enum.map(& &1.title)
+      assert Enum.sort(titles) == ["Note 1", "Note 3", "Note 4", "Note 5"]
+    end
+
+    test "a new note can be given a real name straight away", %{conn: conn, me: me} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "new_note")
+      fire(lv, "start_rename")
+      assert submit(lv, "rename", %{"title" => "First call"}) =~ "First call"
+
+      [vault] = vaults()
 
       assert File.exists?(
                Path.join(Storage.vault_path(vault.directory), "Clients/Acme/First call.md")
              )
-
-      # Opened straight away, in an editor keyed to this panel and this note.
-      assert html =~ "First call"
-      assert html =~ NotesPanel.editor_id("panel", note)
     end
 
     test "a folder, then a note inside it", %{conn: conn, me: me} do
@@ -136,25 +166,31 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       html = fire(lv, "open_folder", %{"path" => "Clients/Acme/Calls"})
       assert html =~ "Acme"
 
-      fire(lv, "start", %{"what" => "note"})
-      submit(lv, "create", %{"title" => "Kickoff"})
+      fire(lv, "new_note")
 
       [vault] = vaults()
-      assert [%{folder_path: "Clients/Acme/Calls"}] = Notes.list_notes(vault.uuid)
+
+      assert [%{folder_path: "Clients/Acme/Calls", title: "Note 1"}] =
+               Notes.list_notes(vault.uuid)
     end
 
     test "a name that cannot be a file is explained", %{conn: conn, me: me} do
       {:ok, lv, _} = mount_panel(conn, me)
-      fire(lv, "start", %{"what" => "note"})
-      html = submit(lv, "create", %{"title" => "a/b"})
-      assert html =~ "cannot contain"
+      fire(lv, "new_note")
+      fire(lv, "start_rename")
+      assert submit(lv, "rename", %{"title" => "a/b"}) =~ "cannot contain"
     end
 
-    test "a second note with the same title is refused", %{conn: conn, me: me} do
-      note!(me, "Same")
+    test "an event the panel does not know is ignored, not a crash of the page", %{
+      conn: conn,
+      me: me
+    } do
       {:ok, lv, _} = mount_panel(conn, me)
       fire(lv, "start", %{"what" => "note"})
-      assert submit(lv, "create", %{"title" => "Same"}) =~ "already here"
+      fire(lv, "create_note", %{"title" => "x"})
+      fire(lv, "no_such_event", %{})
+      assert Process.alive?(lv.pid)
+      assert vaults() == []
     end
   end
 
@@ -211,7 +247,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert targets["Acme plan"].href == nil
     end
 
-    test "a followed link opens the note here; a missing one offers to create it", %{
+    test "a followed link opens the note here; a missing one is created here", %{
       conn: conn,
       me: me
     } do
@@ -225,8 +261,10 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert html =~ NotesPanel.editor_id("panel", plan)
 
       html = leaf(lv, {:leaf_link_clicked, %{editor_id: "x", target: "Not yet written"}})
-      assert html =~ ~s(value="Not yet written")
-      assert html =~ "Create note"
+      [vault] = vaults()
+      created = Notes.get_note_by_title(vault.uuid, "Not yet written")
+      assert created.folder_path == "Clients/Acme"
+      assert html =~ NotesPanel.editor_id("panel", created)
     end
   end
 
@@ -244,8 +282,9 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       refute html =~ "hero-document-plus"
 
       # The buttons are gone, and the events behind them are refused anyway.
-      assert fire(lv, "start", %{"what" => "note"}) =~ "You cannot do that here."
-      fire(lv, "create_note", %{"title" => "Sneaky"})
+      assert fire(lv, "new_note") =~ "You cannot do that here."
+      assert fire(lv, "start", %{"what" => "folder"}) =~ "You cannot do that here."
+      leaf(lv, {:leaf_link_clicked, %{editor_id: "x", target: "Sneaky"}})
       assert length(Notes.list_notes(vault.uuid)) == 1
 
       fire(lv, "open_note", %{"uuid" => note.uuid})
@@ -278,8 +317,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     test "a forged visibility is ignored", %{conn: conn, me: me} do
       {:ok, lv, _} = mount_panel(conn, me, visibility_options: [:shared])
       fire(lv, "visibility", %{"to" => "private"})
-      fire(lv, "start", %{"what" => "note"})
-      submit(lv, "create", %{"title" => "Where am I"})
+      fire(lv, "new_note")
       assert [%{scope: "system"}] = vaults()
     end
 

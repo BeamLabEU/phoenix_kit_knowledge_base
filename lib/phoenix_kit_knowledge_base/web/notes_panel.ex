@@ -164,6 +164,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:remote_change, false)
     |> assign(:creating, nil)
     |> assign(:draft_title, "")
+    |> assign(:just_created?, false)
     |> assign(:renaming?, false)
     |> assign(:notice, nil)
     |> assign(:vault, nil)
@@ -319,10 +320,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end)
   end
 
-  def handle_event("start", %{"what" => what}, socket) when what in ["note", "folder"] do
+  # A folder needs a name to be any use, so it asks for one. A note does not:
+  # see "new_note".
+  def handle_event("start", %{"what" => "folder"}, socket) do
     with_access(socket, :edit, fn socket ->
       socket
-      |> assign(:creating, String.to_existing_atom(what))
+      |> assign(:creating, :folder)
       |> assign(:draft_title, "")
       |> assign(:notice, nil)
     end)
@@ -332,25 +335,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     {:noreply, socket |> assign(:creating, nil) |> assign(:renaming?, false)}
   end
 
-  def handle_event("create_note", %{"title" => title}, socket) do
-    with_access(socket, :edit, fn socket ->
-      with {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
-           {:ok, note} <-
-             Notes.create_note(
-               vault,
-               %{title: title, folder_path: socket.assigns.current_folder},
-               socket.assigns.user.uuid
-             ) do
-        socket
-        |> assign(:vault, vault)
-        |> assign(:creating, nil)
-        |> load_listing()
-        |> assign_admin_href()
-        |> open_note(note)
-      else
-        {:error, reason} -> notice(socket, :error, error_message(reason))
-      end
-    end)
+  # A new note is written in at once: it is created as "Note N" (the next
+  # number free in this folder) and opened with the caret in it. What is in it
+  # matters more than what it is called — the title can be changed afterwards,
+  # from the pencil or by clicking it.
+  def handle_event("new_note", _params, socket) do
+    with_access(socket, :edit, &create_and_open(&1, :numbered))
   end
 
   def handle_event("create_folder", %{"name" => name}, socket) do
@@ -444,6 +434,63 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   def handle_event("dismiss", _params, socket), do: {:noreply, assign(socket, :notice, nil)}
 
+  # Anything else — an old page's event, a forged one — is ignored. The panel
+  # runs in the host's process: a clause error here would take the host's whole
+  # page down.
+  def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  @numbered_attempts 20
+
+  defp create_and_open(socket, title) do
+    with {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
+         {:ok, note} <- create_note(socket, vault, title) do
+      socket
+      |> assign(:vault, vault)
+      |> assign(:creating, nil)
+      |> load_listing()
+      |> assign_admin_href()
+      |> open_note(note)
+      |> assign(:just_created?, true)
+    else
+      {:error, reason} -> notice(socket, :error, error_message(reason))
+    end
+  end
+
+  # "Note N" after the highest N already in the folder. Two people clicking at
+  # once both pick the same N; the second finds the file taken and moves on to
+  # the next number rather than failing.
+  defp create_note(socket, vault, :numbered) do
+    folder = socket.assigns.current_folder
+
+    first =
+      vault.uuid
+      |> Notes.list_notes(folder_path: folder)
+      |> Enum.flat_map(fn note ->
+        case Regex.run(~r/^Note (\d+)$/, note.title) do
+          [_, n] -> [String.to_integer(n)]
+          nil -> []
+        end
+      end)
+      |> Enum.max(fn -> 0 end)
+      |> Kernel.+(1)
+
+    Enum.reduce_while(first..(first + @numbered_attempts - 1), {:error, :already_exists}, fn n,
+                                                                                             _ ->
+      case create_note(socket, vault, "Note #{n}") do
+        {:error, :already_exists} = taken -> {:cont, taken}
+        result -> {:halt, result}
+      end
+    end)
+  end
+
+  defp create_note(socket, vault, title) when is_binary(title) do
+    Notes.create_note(
+      vault,
+      %{title: title, folder_path: socket.assigns.current_folder},
+      socket.assigns.user.uuid
+    )
+  end
+
   # Access is asked again on every event: it is the host's, and may have
   # changed since the panel rendered.
   defp with_access(socket, action, fun) do
@@ -483,6 +530,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:remote_change, false)
     |> assign(:renaming?, false)
     |> assign(:notice, nil)
+    |> assign(:just_created?, false)
   end
 
   defp close_note(socket) do
@@ -561,7 +609,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     socket
   end
 
-  # A followed link opens the note here, or offers to create it here — the
+  # A followed link opens the note here, or creates it here — the
   # target is resolved again rather than trusting anything the page sent.
   defp handle_leaf({:leaf_link_clicked, %{target: target}}, socket) do
     from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
@@ -573,13 +621,13 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           nil -> socket
         end
 
+      # Not written yet: write it — in the folder the panel is in, named as the
+      # link names it, open and ready to type in. Access is asked again: this
+      # arrives from the editor, not from a button the panel decided to show.
       nil ->
-        if socket.assigns.can_edit? do
-          socket
-          |> close_note()
-          |> load_listing()
-          |> assign(:creating, :note)
-          |> assign(:draft_title, target)
+        if socket.assigns.place &&
+             Places.authorize(:edit, socket.assigns.user, socket.assigns.place) do
+          socket |> close_note() |> create_and_open(target)
         else
           socket
         end
@@ -862,21 +910,21 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       <form
         :if={@creating}
         id={"#{@id}-create"}
-        phx-submit={if @creating == :note, do: "create_note", else: "create_folder"}
+        phx-submit="create_folder"
         phx-target={@myself}
         class="flex flex-wrap gap-2"
       >
         <input
           type="text"
-          name={if @creating == :note, do: "title", else: "name"}
+          name="name"
           value={@draft_title}
-          placeholder={if @creating == :note, do: "Note title", else: "Folder name"}
+          placeholder="Folder name"
           class="input input-sm input-bordered flex-1 min-w-0"
           autofocus
           required
         />
         <button type="submit" class="btn btn-sm btn-primary">
-          {if @creating == :note, do: "Create note", else: "Create folder"}
+          Create folder
         </button>
         <button type="button" phx-click="cancel" phx-target={@myself} class="btn btn-sm btn-ghost">
           Cancel
@@ -886,8 +934,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       <div :if={@can_edit? and is_nil(@creating)} class="flex gap-2">
         <button
           type="button"
-          phx-click="start"
-          phx-value-what="note"
+          phx-click="new_note"
           phx-target={@myself}
           class="btn btn-sm btn-primary"
         >
@@ -943,7 +990,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           </button>
         </form>
 
-        <h3 :if={not @renaming?} class="font-medium truncate flex-1 min-w-0">
+        <button
+          :if={not @renaming? and @can_edit?}
+          type="button"
+          phx-click="start_rename"
+          phx-target={@myself}
+          class="font-medium truncate flex-1 min-w-0 text-left hover:underline decoration-dotted"
+          title="Rename"
+        >
+          {@note.title}
+        </button>
+        <h3 :if={not @renaming? and not @can_edit?} class="font-medium truncate flex-1 min-w-0">
           {@note.title}
         </h3>
 
@@ -1022,6 +1079,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         debounce={500}
         readonly={not @can_edit?}
         notify={{__MODULE__, @id}}
+        autofocus={@just_created?}
       />
     </article>
     """

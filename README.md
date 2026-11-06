@@ -200,7 +200,13 @@ your app:
 folder the panel shows. Nothing is created until someone writes the first note
 or makes the first folder; then the vault and the folder chain appear. People
 make subfolders and write notes in the panel itself, with autosave. They never
-see above `path`. Several panels share a vault by sharing its first segment —
+see above `path`.
+
+Writing comes first: **+ Note** creates "Note 1" (then "Note 2", … — the next
+free number in that folder) and opens it with the caret already in it, so a
+thought goes down in one click. The title is secondary: click it, or the
+pencil, to rename. Clicking a `[[link]]` to a note that does not exist yet
+creates it the same way, named as the link names it. Several panels share a vault by sharing its first segment —
 one `CRM` vault with a folder per client.
 
 - **Everyone here / Only me.** Shared notes live in an organisation vault of

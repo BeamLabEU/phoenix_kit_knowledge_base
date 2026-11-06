@@ -25,7 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`notes_panel`: notes you can drop into any page.**
   `<PhoenixKitKnowledgeBase.Web.Components.notes_panel path={["CRM", "Clients", id]} …/>`
   shows one vault folder, named by `path`, with its subfolders and notes; the
-  first note or folder creates the vault and the chain. Notes open and autosave
+  first note or folder creates the vault and the chain. **+ Note** writes
+  first and names later: it creates "Note N" (the next free number in the
+  folder) and opens it with the caret in it (Leaf `autofocus`); the title is
+  renamed from the pencil or by clicking it. An unwritten `[[link]]` creates its
+  note the same way. Events the panel does not know are ignored rather than
+  allowed to crash the host page. Notes open and autosave
   in the panel (Leaf with `notify`, so the host page never receives the
   editor's messages; with a Leaf that predates `notify` the panel is read-only).
   "Everyone here" / "Only me", the host's `:authorize` hook asked on every
