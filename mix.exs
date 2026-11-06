@@ -34,7 +34,7 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
     # find this module's `.beam` at host startup. Without it the module never
     # registers and every route 404s.
     [
-      extra_applications: [:logger, :phoenix_kit]
+      extra_applications: [:logger, :phoenix_kit, :gettext]
     ]
   end
 
@@ -49,6 +49,8 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
       "quality.ci": ["format --check-formatted", "credo --strict", "dialyzer"],
       precommit: [
         "compile --force --warnings-as-errors",
+        # A string added to the code but not to the catalogue ships untranslated.
+        "gettext.extract --check-up-to-date",
         "deps.unlock --check-unused",
         "cmd mix hex.audit",
         "quality.ci"
@@ -96,6 +98,9 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
       # transitively, but a transitive dep is not a contract — declared here so
       # this module keeps compiling if core ever drops it.
       {:yaml_elixir, "~> 2.9"},
+      # This module's own translations (`PhoenixKitKnowledgeBase.Gettext`):
+      # each module owns its catalogue, the host only sets the locale.
+      {:gettext, "~> 1.0"},
       # Alex Dontsov's Leaf — the markdown editor PhoenixKit itself uses. Core
       # already vendors its JS into `phoenix_kit.js` and registers the hook on
       # `window.PhoenixKitHooks`, so this needs no host setup; the dependency is
@@ -114,7 +119,7 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
     [
       licenses: ["MIT"],
       links: %{"GitHub" => @source_url},
-      files: ~w(lib .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
+      files: ~w(lib priv .formatter.exs mix.exs README.md CHANGELOG.md LICENSE)
     ]
   end
 

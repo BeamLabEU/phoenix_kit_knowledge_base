@@ -67,6 +67,18 @@ defmodule PhoenixKitKnowledgeBase.Links do
         )
       )
 
+    resolver_from(notes)
+  end
+
+  @doc """
+  A resolver over the given notes only — for a notes panel, whose links must
+  resolve inside its own folder and nowhere else: a title from outside it is
+  somebody else's note, and saying it exists would tell its name to a person who
+  may only see this folder. Each note needs `title_key`, `relative_path` and
+  `folder_path`.
+  """
+  @spec resolver_from([map()]) :: resolver()
+  def resolver_from(notes) do
     %{
       by_title: Enum.group_by(notes, & &1.title_key),
       by_path: Map.new(notes, &{path_key(&1.relative_path), &1})

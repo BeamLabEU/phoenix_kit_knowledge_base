@@ -34,12 +34,13 @@ lib/phoenix_kit_knowledge_base/
   markdown.ex       front matter, tags, wiki-link parsing, rendering
   rescan.ex         reconcile index with disk; rename detection by hash
   vaults.ex         vault CRUD, membership, the whole access model
+  places.ex         a notes panel's path → vault + folder; the `:authorize` hook
   events.ex         per-vault PubSub
   collab.ex         a Leaf.Collab.Room per note; started from `children/0`
   collab/store.ex   where a live document goes: Notes -> disk -> index
   migrations.ex     versioned coordinator (the host's migration calls into this)
   schemas/          five Ecto schemas, all `use PhoenixKit.SchemaPrefix`
-  web/              three LiveViews
+  web/              three LiveViews, NotesPanel (the drop-in widget) + Components
 scripts/smoke_http.exs                   renders every page as a logged-in user
 scripts/verify_links.exs                 link resolution against a real database
 scripts/verify_collab.exs                live editing: what a room writes and refuses
@@ -49,11 +50,12 @@ dev_docs/                                date-prefixed working notes (not shippe
 
 ## Verifying a change
 
-Three layers, and **none of them alone is sufficient**:
+Four layers, and **none of them alone is sufficient**:
 
 | Layer | Command | Catches | Blind to |
 |---|---|---|---|
 | Unit | `mix test` | parsing, path safety, resolution, changesets | anything needing a DB or a rendered page |
+| Integration | `PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=… mix test` (`test/integration/`, `DataCase`) | `Places`, migrations, the unique-index races — against Postgres and a temp vault root | templates; **excluded with exit 0 when no database answers — read the summary** |
 | Live DB | `scripts/verify_links.exs`, `scripts/verify_collab.exs`, `scripts/verify_folder_move.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link points at, what a room writes, folder moves | templates, client-side state |
 | HTTP | `scripts/smoke_http.exs` | template crashes, dead renders | client-side JS behaviour |
 
