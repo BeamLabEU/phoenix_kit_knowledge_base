@@ -7,48 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **The vault page works on a phone.** It was wider than the screen (the four
-  labelled header buttons), and the whole sidebar — tree, tags, unresolved
-  links — stacked above the note, so the editor started below the first screen.
-  Below `sm` the header buttons are icons (labels kept as tooltips and for
-  screen readers). Below `lg`, with a note open, the sidebar waits behind a
-  "Files" button at the top, and opening a note puts it away again; the tree
-  takes the full width instead of core's fixed 240px. Backlinks and outgoing
-  links no longer vanish below `xl`: they follow the note, in its column on
-  `lg`. The vault's directory is truncated, with the full path on hover,
-  rather than broken mid-word. Still no JavaScript: it is one assign.
-
 ### Added
-
-- **`notes_panel`: notes you can drop into any page.**
-  `<PhoenixKitKnowledgeBase.Web.Components.notes_panel path={["CRM", "Clients", id]} …/>`
-  shows one vault folder, named by `path`, with its subfolders and notes; the
-  first note or folder creates the vault and the chain. **+ Note** writes
-  first and names later: it creates "Note N" (the next free number in the
-  folder) and opens it with the caret in it (Leaf `autofocus`); the title is
-  renamed from the pencil or by clicking it. An unwritten `[[link]]` creates its
-  note the same way. Events the panel does not know are ignored rather than
-  allowed to crash the host page. Notes open and autosave
-  in the panel (Leaf with `notify`, so the host page never receives the
-  editor's messages; with a Leaf that predates `notify` the panel is read-only).
-  "Everyone here" / "Only me", the host's `:authorize` hook asked on every
-  event, a folder fence no event can step outside, `[[`/`#` suggestions and
-  link resolution limited to the panel's folder, rename, trash, and the same
-  stale-file guard as the vault page ("Take theirs" / "Keep mine").
-  `Links.resolver_from/1` and `Notes.list_notes(under: folder)` are new.
-
-- **`Places`: where a drop-in notes panel's notes live** (groundwork for the
-  panel). A path such as `["CRM", "Clients", "Acme"]` names a vault and a folder
-  chain inside it, created on first use: shared ("everyone here") in an
-  organisation vault of that name, private ("only me") in the person's own
-  vault of that name. Migration V2 adds `vaults.path_key` with one shared vault
-  per name and one private vault per person per name; two people creating the
-  same place at once end up in one vault, with no stray directory. Shared places
-  ask the host's `config :phoenix_kit_knowledge_base, :authorize, {M, :f}` hook,
-  which fails closed. Integration tests against PostgreSQL now run alongside the
-  unit suite (`test/integration/`), excluded when no database answers.
 
 - **Right-click menus on the vault tree.** Folders offer Rename and Move to
   trash, notes offer Open and Move to trash; touch-and-hold does the same on a
