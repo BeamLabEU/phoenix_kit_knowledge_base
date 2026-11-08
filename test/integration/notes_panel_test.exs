@@ -229,7 +229,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       me: me
     } do
       {:ok, lv, html} = mount_panel(conn, me, locale: "ru")
-      assert html =~ "Только я"
+      assert html =~ "Только мои"
       assert html =~ "Здесь пока нет заметок."
 
       html = fire(lv, "new_note")
@@ -246,7 +246,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
 
     test "Estonian", %{conn: conn, me: me} do
       {:ok, lv, html} = mount_panel(conn, me, locale: "et")
-      assert html =~ "Ainult mina"
+      assert html =~ "Ainult minu"
       fire(lv, "new_note")
       [vault] = vaults()
       assert [%{title: "Märge 1"}] = Notes.list_notes(vault.uuid)
@@ -256,10 +256,12 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       note!(me, "Dated")
       {:ok, _lv, html} = mount_panel(conn, me, locale: "ru")
 
+      # Core's `Date.short/1` and core's catalogue, as everywhere else in the
+      # admin; its capitalisation is core's call.
       month =
         Enum.at(~w(янв фев мар апр мая июн июл авг сен окт ноя дек), Date.utc_today().month - 1)
 
-      assert html =~ month
+      assert String.downcase(html) =~ month
     end
   end
 

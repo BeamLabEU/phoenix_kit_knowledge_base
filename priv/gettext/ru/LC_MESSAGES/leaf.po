@@ -57,7 +57,7 @@ msgid "Button"
 msgstr "Кнопка"
 
 msgid "By URL"
-msgstr "По ссылке"
+msgstr "По адресу"
 
 msgid "Callout"
 msgstr "Выноска"
@@ -69,7 +69,7 @@ msgid "Caption..."
 msgstr "Подпись…"
 
 msgid "Clean up"
-msgstr "Очистить"
+msgstr "Очистка"
 
 msgid "Code Block"
 msgstr "Блок кода"
@@ -132,7 +132,7 @@ msgid "Edit <{tag}> source"
 msgstr "Изменить исходный код <{tag}>"
 
 msgid "Edit image URL"
-msgstr "Изменить ссылку на изображение"
+msgstr "Изменить адрес изображения"
 
 msgid "Edit link"
 msgstr "Изменить ссылку"
@@ -195,7 +195,7 @@ msgid "Image"
 msgstr "Изображение"
 
 msgid "Image URL"
-msgstr "Ссылка на изображение"
+msgstr "Адрес изображения"
 
 msgid "Image alt text"
 msgstr "Альтернативный текст изображения"

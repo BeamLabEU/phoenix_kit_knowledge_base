@@ -57,7 +57,7 @@ msgid "Button"
 msgstr "Nupp"
 
 msgid "By URL"
-msgstr "Lingi kaudu"
+msgstr "Aadressi järgi"
 
 msgid "Callout"
 msgstr "Esiletõst"
@@ -69,7 +69,7 @@ msgid "Caption..."
 msgstr "Pealdis…"
 
 msgid "Clean up"
-msgstr "Puhasta"
+msgstr "Korrastamine"
 
 msgid "Code Block"
 msgstr "Koodiplokk"
@@ -132,7 +132,7 @@ msgid "Edit <{tag}> source"
 msgstr "Muuda <{tag}> lähtekoodi"
 
 msgid "Edit image URL"
-msgstr "Muuda pildi linki"
+msgstr "Muuda pildi aadressi"
 
 msgid "Edit link"
 msgstr "Muuda linki"
@@ -195,7 +195,7 @@ msgid "Image"
 msgstr "Pilt"
 
 msgid "Image URL"
-msgstr "Pildi link"
+msgstr "Pildi aadress"
 
 msgid "Image alt text"
 msgstr "Pildi alternatiivtekst"
@@ -210,7 +210,7 @@ msgid "Increase Indent"
 msgstr "Suurenda taanet"
 
 msgid "Inline Code"
-msgstr "Kood tekstis"
+msgstr "Reasisene kood"
 
 msgid "Insert"
 msgstr "Lisa"
@@ -264,7 +264,7 @@ msgid "More formatting"
 msgstr "Rohkem vormindust"
 
 msgid "More inserts"
-msgstr "Rohkem lisamisi"
+msgstr "Muud lisamised"
 
 msgid "No address yet"
 msgstr "Aadressi veel pole"
@@ -348,7 +348,7 @@ msgid "Text"
 msgstr "Tekst"
 
 msgid "Toggle Header Row"
-msgstr "Lülita päiserida"
+msgstr "Päiserida sisse/välja"
 
 msgid "Toggle fullscreen"
 msgstr "Täisekraan sisse/välja"

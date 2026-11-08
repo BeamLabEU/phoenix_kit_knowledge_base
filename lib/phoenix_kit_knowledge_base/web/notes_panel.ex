@@ -47,7 +47,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
   alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKitKnowledgeBase.{Links, Markdown, Notes, Paths, Places, Vaults}
+  alias PhoenixKitKnowledgeBase.{Errors, Links, Markdown, Notes, Paths, Places, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Note
   alias PhoenixKitKnowledgeBase.Web.VaultLive
 
@@ -792,9 +792,16 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end)
   end
 
+  # The panel's own wording where a person here needs a different sentence from
+  # the admin page's; everything else is `Errors.message/1`, which never shows
+  # a raw term (it logs one).
   defp error_message(:unauthorized), do: gettext("You cannot do that here.")
   defp error_message(:already_exists), do: gettext("Something with that name is already here.")
+  defp error_message(:target_exists), do: gettext("Something with that name is already here.")
   defp error_message(:blank), do: gettext("Give it a name.")
+
+  defp error_message(reason) when reason in [:stale, :missing_file],
+    do: gettext("This note was changed somewhere else, so this edit was not saved.")
 
   defp error_message({:forbidden_characters, chars}),
     do: gettext("A name cannot contain %{characters}.", characters: Enum.join(chars, " "))
@@ -805,7 +812,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp error_message(:reserved), do: gettext("That name is reserved by the operating system.")
   defp error_message({:folder, reason}), do: error_message(reason)
   defp error_message(%Ecto.Changeset{}), do: gettext("These notes could not be set up.")
-  defp error_message(other), do: gettext("That did not work (%{reason}).", reason: inspect(other))
+  defp error_message(other), do: Errors.message(other)
 
   # ── Render ────────────────────────────────────────────────────────────────
 
@@ -973,7 +980,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           name="name"
           value={@draft_title}
           placeholder={gettext("Folder name")}
-          class="input input-sm input-bordered flex-1 min-w-0"
+          aria-label={gettext("Folder name")}
+          class="input input-sm flex-1 min-w-0"
           autofocus
           required
         />
@@ -1034,7 +1042,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             type="text"
             name="title"
             value={@note.title}
-            class="input input-sm input-bordered flex-1 min-w-0"
+            aria-label={gettext("Note title")}
+            class="input input-sm flex-1 min-w-0"
             autofocus
             required
           />
@@ -1167,32 +1176,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     if below == [], do: [], else: [root | below]
   end
 
-  # "05 Nov", with the month in the reader's language.
-  defp short_date(datetime) do
-    Calendar.strftime(datetime, "%d %b", abbreviated_month_names: &month_abbreviation/1)
-  end
+  # "5 Nov" / "5. nov" — core's, so the order and punctuation come from each
+  # language's own translation rather than a format string written in English.
+  defp short_date(datetime), do: PhoenixKit.Utils.Date.short(datetime)
 
-  defp month_abbreviation(1), do: pgettext("month", "Jan")
-  defp month_abbreviation(2), do: pgettext("month", "Feb")
-  defp month_abbreviation(3), do: pgettext("month", "Mar")
-  defp month_abbreviation(4), do: pgettext("month", "Apr")
-  defp month_abbreviation(5), do: pgettext("month", "May")
-  defp month_abbreviation(6), do: pgettext("month", "Jun")
-  defp month_abbreviation(7), do: pgettext("month", "Jul")
-  defp month_abbreviation(8), do: pgettext("month", "Aug")
-  defp month_abbreviation(9), do: pgettext("month", "Sep")
-  defp month_abbreviation(10), do: pgettext("month", "Oct")
-  defp month_abbreviation(11), do: pgettext("month", "Nov")
-  defp month_abbreviation(12), do: pgettext("month", "Dec")
-
-  # The vault page's configs, with their popup headings in the reader's language.
-  defp suggestion_configs do
-    Enum.map(VaultLive.suggestion_configs(), fn
-      %{label: "Notes"} = config -> %{config | label: gettext("Notes")}
-      %{label: "Tags"} = config -> %{config | label: gettext("Tags")}
-      config -> config
-    end)
-  end
+  # The vault page's configs, headings already in the reader's language.
+  defp suggestion_configs, do: VaultLive.suggestion_configs()
 
   defp save_label(:saved), do: gettext("Saved")
   defp save_label(:unsaved), do: gettext("Not saved")

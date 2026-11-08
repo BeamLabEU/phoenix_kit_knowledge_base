@@ -49,13 +49,28 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   so the link says which note it meant rather than leaving it to the tie-break.
   """
   use PhoenixKitWeb, :live_view
+  # After `use PhoenixKitWeb`, which installs core's backend: this module's
+  # strings live in its own catalogue.
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
   # Not in core's default imports — `use PhoenixKitWeb, :live_view` brings in
   # `Components.Core.*` only, so the folder explorer has to be asked for.
   import PhoenixKitWeb.Components.FolderExplorer
 
   alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Notes, Paths, Rescan, Storage, Vaults}
+
+  alias PhoenixKitKnowledgeBase.{
+    Errors,
+    Events,
+    Links,
+    Markdown,
+    Notes,
+    Paths,
+    Rescan,
+    Storage,
+    Vaults
+  }
+
   alias PhoenixKitKnowledgeBase.Schemas.Note
 
   # Prefix only. The live id is per-note (`editor_id/1`) — see there for why
@@ -81,8 +96,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       max_length: 200,
       allow_create: true,
       keep_trigger: true,
-      insert_suffix: "]]",
-      label: "Notes"
+      insert_suffix: "]]"
     },
     %{
       trigger: "#",
@@ -95,8 +109,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       min_chars: 0,
       max_length: 60,
       allow_create: true,
-      keep_trigger: true,
-      label: "Tags"
+      keep_trigger: true
     }
   ]
 
@@ -154,7 +167,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         # would confirm the existence of other people's vaults.
         {:noreply,
          socket
-         |> put_flash(:error, "That vault does not exist, or you do not have access to it.")
+         |> put_flash(
+           :error,
+           gettext("That vault does not exist, or you do not have access to it.")
+         )
          |> push_navigate(to: Paths.vaults())}
 
       {:ok, vault, role} ->
@@ -166,14 +182,38 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          |> assign(:role, role)
          |> assign(:can_write, Vaults.can?(role, :write))
          |> assign(:can_manage, Vaults.can?(role, :manage))
-         |> assign(:page_title, vault.name)
-         |> assign(:page_subtitle, vault.description)
+         # Core's admin bar draws the trail and, beside it, this page's actions.
+         |> assign(:page_section, gettext("Knowledge Base"))
+         |> assign(:page_section_path, Paths.vaults())
+         |> assign(:page_toolbar, {__MODULE__, :header_toolbar})
          |> load_workspace()
          # Opening a note (or the new-note form) from the phone sidebar is
          # the end of using it; put it away so the note is what shows.
          |> assign(:files_open, false)
-         |> apply_action(socket.assigns.live_action, params)}
+         |> apply_action(socket.assigns.live_action, params)
+         |> assign_trail()}
     end
+  end
+
+  # "Knowledge Base / <vault>" with no note open; "Knowledge Base / <vault> /
+  # <note>" with one — the vault a crumb that patches back to it, since it is
+  # this same LiveView. Re-run whenever the open note or its title changes.
+  defp assign_trail(%{assigns: %{vault: vault}} = socket) do
+    {crumbs, title} =
+      cond do
+        socket.assigns.note ->
+          {[%{label: vault.name, patch: Paths.vault(vault.slug)}], socket.assigns.note.title}
+
+        socket.assigns.live_action == :new ->
+          {[%{label: vault.name, patch: Paths.vault(vault.slug)}], gettext("New note")}
+
+        true ->
+          {[], vault.name}
+      end
+
+    socket
+    |> assign(:page_crumbs, crumbs)
+    |> assign(:page_title, title)
   end
 
   # `handle_params` runs on every patch, so subscribing there would stack a
@@ -197,7 +237,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     case Notes.get_note(socket.assigns.vault.uuid, id) do
       nil ->
         socket
-        |> put_flash(:error, "That note no longer exists.")
+        |> put_flash(:error, gettext("That note no longer exists."))
         |> push_patch(to: Paths.vault(socket.assigns.vault.slug))
 
       note ->
@@ -255,13 +295,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # ── Events: notes ─────────────────────────────────────────────────────────
 
   def handle_event("create_note", %{"title" => title}, socket) do
-    attrs = %{
-      "title" => title,
-      "content" => "",
-      "folder_path" => folder_for_new_note(socket)
-    }
-
     with :ok <- require_write(socket),
+         {:ok, folder_path, title} <- place_new_note(title, folder_for_new_note(socket)),
+         attrs = %{"title" => title, "content" => "", "folder_path" => folder_path},
          {:ok, note} <- Notes.create_note(socket.assigns.vault, attrs, actor_uuid(socket)) do
       {:noreply,
        socket
@@ -270,7 +306,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
        |> push_patch(to: Paths.note(socket.assigns.vault.slug, note.uuid))}
     else
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "You have read-only access to this vault.")}
+        {:noreply, put_flash(socket, :error, read_only_message())}
 
       {:error, reason} ->
         {:noreply, assign(socket, :note_error, error_message(reason))}
@@ -303,7 +339,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
              |> assign(:note_error, nil)
              |> assign(:conflict, false)
              |> load_workspace()
-             |> assign_note_links()}
+             |> assign_note_links()
+             |> assign_trail()}
 
           {:error, reason} ->
             {:noreply, assign(socket, :note_error, error_message(reason))}
@@ -325,19 +362,23 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          {:ok, _} <- Notes.delete_note(vault, note) do
       {:noreply,
        socket
-       |> put_flash(:info, "Note moved to the trash. Links to it are now unresolved.")
+       |> put_flash(:info, gettext("Note moved to the trash."))
        |> assign(:note, nil)
        |> load_workspace()
        |> push_patch(to: Paths.vault(vault.slug))}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not delete that note.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not delete that note."))}
     end
   end
 
+  # The select only offers indexed folders, but the event carries a path and a
+  # hand-sent one would otherwise be created on the way (`Storage.move_note/3`
+  # makes the target's directory) — named however the sender liked, past
+  # `Storage.validate_filename/1`. Only a folder the index already has is a
+  # destination.
   def handle_event("move_note", %{"folder" => folder}, socket) do
-    folder_path = if folder == "root", do: "", else: folder
-
     with :ok <- require_write(socket),
+         {:ok, folder_path} <- existing_folder_path(socket, folder),
          %Note{} = note <- socket.assigns.note,
          {:ok, updated} <-
            Notes.move_note(socket.assigns.vault, note, folder_path,
@@ -346,7 +387,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       {:noreply, socket |> assign(:note, updated) |> assign(:conflict, false) |> load_workspace()}
     else
       {:error, reason} -> {:noreply, put_flash(socket, :error, error_message(reason))}
-      _ -> {:noreply, put_flash(socket, :error, "Could not move that note.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not move that note."))}
     end
   end
 
@@ -361,7 +402,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       {:noreply, socket |> assign(:adding_folder, false) |> load_workspace()}
     else
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Folder: #{error_message(reason)}")}
+        {:noreply, put_flash(socket, :error, error_message(reason))}
     end
   end
 
@@ -374,16 +415,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          {:ok, removed} <- Notes.delete_folder(socket.assigns.vault, folder) do
       {:noreply,
        socket
-       |> put_flash(
-         :info,
-         "Moved #{folder.name} and #{removed} #{if removed == 1, do: "note", else: "notes"} to the trash."
-       )
+       |> put_flash(:info, folder_trashed_message(folder, removed))
        |> assign(:selected_folder, :any)
        |> assign(:note, nil)
        |> load_workspace()
        |> push_patch(to: Paths.vault(socket.assigns.vault.slug))}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not delete that folder.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not delete that folder."))}
     end
   end
 
@@ -404,7 +442,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          {:ok, note} <- Notes.restore_note(socket.assigns.vault, entry) do
       {:noreply,
        socket
-       |> put_flash(:info, "Restored “#{note.title}”.")
+       |> put_flash(:info, gettext("Restored “%{title}”.", title: note.title))
        |> assign(:trash, Notes.list_trash(socket.assigns.vault))
        |> load_workspace()
        |> push_patch(to: Paths.note(socket.assigns.vault.slug, note.uuid))}
@@ -414,14 +452,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          put_flash(
            socket,
            :error,
-           "A note already exists at that path. Rename or move it, then restore again."
+           gettext("A note already exists at that path. Rename or move it, then restore again.")
          )}
 
       {:error, reason} ->
         {:noreply, put_flash(socket, :error, error_message(reason))}
 
       _ ->
-        {:noreply, put_flash(socket, :error, "Could not restore that note.")}
+        {:noreply, put_flash(socket, :error, gettext("Could not restore that note."))}
     end
   end
 
@@ -431,19 +469,19 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          :ok <- Notes.purge_trash(socket.assigns.vault, entry) do
       {:noreply,
        socket
-       |> put_flash(:info, "Deleted permanently.")
+       |> put_flash(:info, gettext("Deleted permanently."))
        |> assign(:trash, Notes.list_trash(socket.assigns.vault))}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not delete that.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not delete that permanently."))}
     end
   end
 
   def handle_event("empty_trash", _params, socket) do
     with :ok <- require_write(socket),
          :ok <- Notes.empty_trash(socket.assigns.vault) do
-      {:noreply, socket |> put_flash(:info, "Trash emptied.") |> assign(:trash, [])}
+      {:noreply, socket |> put_flash(:info, gettext("Trash emptied.")) |> assign(:trash, [])}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not empty the trash.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not empty the trash."))}
     end
   end
 
@@ -549,7 +587,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
            ) do
       {:noreply, socket |> load_workspace() |> refresh_open_note() |> assign_note_links()}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not move that note.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not move that note."))}
     end
   end
 
@@ -565,7 +603,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     else
       {:error, :unchanged} -> {:noreply, socket}
       {:error, reason} -> {:noreply, put_flash(socket, :error, move_error(reason))}
-      _ -> {:noreply, put_flash(socket, :error, "Could not move that folder.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not move that folder."))}
     end
   end
 
@@ -589,9 +627,11 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           socket
         end
 
-      {:noreply, socket |> put_flash(:info, "Note moved to the trash.") |> load_workspace()}
+      {:noreply,
+       socket |> put_flash(:info, gettext("Note moved to the trash.")) |> load_workspace()}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not move that note to the trash.")}
+      _ ->
+        {:noreply, put_flash(socket, :error, gettext("Could not move that note to the trash."))}
     end
   end
 
@@ -601,16 +641,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          {:ok, removed} <- Notes.delete_folder(socket.assigns.vault, folder) do
       {:noreply,
        socket
-       |> put_flash(
-         :info,
-         "Moved #{folder.name} and #{removed} #{if removed == 1, do: "note", else: "notes"} to the trash."
-       )
+       |> put_flash(:info, folder_trashed_message(folder, removed))
        |> assign(:selected_folder, :any)
        |> assign(:note, nil)
        |> load_workspace()
        |> push_patch(to: Paths.vault(socket.assigns.vault.slug))}
     else
-      _ -> {:noreply, put_flash(socket, :error, "Could not move that folder to the trash.")}
+      _ ->
+        {:noreply, put_flash(socket, :error, gettext("Could not move that folder to the trash."))}
     end
   end
 
@@ -634,7 +672,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     if require_write(socket) == :ok do
       run_rescan(socket)
     else
-      {:noreply, put_flash(socket, :error, "You do not have permission to rescan.")}
+      {:noreply, put_flash(socket, :error, gettext("You do not have permission to rescan."))}
     end
   end
 
@@ -685,10 +723,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         {:noreply, socket}
 
       # Somebody saved the bytes we already have — a rescan re-stamping an
-      # mtime, or a peer saving an identical buffer. Nothing to show.
+      # mtime, a peer saving an identical buffer, or a rename or move, which
+      # keeps the bytes and changes the path. Nothing to show, but the row is
+      # taken: `save_content/3` writes against `@note.relative_path`, and after
+      # a rename elsewhere that is a file that no longer exists — the next
+      # keystroke would raise a conflict over a change nobody made to the text.
       socket.assigns.note && payload.note_uuid == socket.assigns.note.uuid &&
           payload.hash == socket.assigns.note.content_hash ->
-        {:noreply, socket}
+        {:noreply, socket |> follow_open_note() |> assign_trail()}
 
       socket.assigns.note && payload.note_uuid == socket.assigns.note.uuid ->
         {:noreply, apply_remote_note_change(socket)}
@@ -722,6 +764,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     if Events.own?(payload) do
       {:noreply, socket}
     else
+      # A folder move elsewhere re-indexes the notes under it without a
+      # per-note message (`Notes.relocate_folder/3`), and a rescan may have
+      # recognised an external `mv` of the open note — either way only this
+      # message says so, and the open row may now name a path that is gone.
       {:noreply,
        socket
        |> load_workspace()
@@ -729,7 +775,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          :trash,
          if(socket.assigns.trash_open, do: Notes.list_trash(socket.assigns.vault), else: [])
        )
-       |> reload_open_note_if_idle()}
+       |> follow_open_note()
+       |> assign_trail()}
     end
   end
 
@@ -788,8 +835,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     {:noreply, socket}
   end
 
-  # The image/video toolbar buttons. This version has no upload path, so the
-  # request is acknowledged and ignored rather than left to crash the LiveView.
+  # The image/video toolbar buttons. Leaf ≥ 0.10 draws them only when the host
+  # lists them in `toolbar`, and this page lists none — there is no upload path
+  # — so this should not arrive; it is matched so that an older Leaf's button
+  # cannot crash the LiveView.
   def handle_info({:leaf_insert_request, _payload}, socket), do: {:noreply, socket}
 
   # Leaf has found `[[…]]` targets on screen and wants to know which of them
@@ -823,14 +872,6 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # that value was rendered into a page which may be stale, and the same rule
   # applies here as in `find_trash_entry/2` — a page must not be able to name
   # the destination.
-  # A floor under every message that reaches this process. Leaf adds messages
-  # between versions, `Leaf.Collab` sends several more, and an unmatched
-  # `handle_info/2` takes the LiveView down with the editor sitting right
-  # there — which is a worse outcome than ignoring something we do not
-  # understand. Logged rather than silent, so a new message is discoverable
-  # instead of merely absent.
-  #
-  # Placed after every real clause: it matches anything.
   def handle_info({:leaf_link_clicked, %{target: target}}, socket) do
     vault = socket.assigns.vault
     from_folder = (socket.assigns.note && socket.assigns.note.folder_path) || ""
@@ -844,10 +885,20 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     {:noreply, push_patch(socket, to: path)}
   end
 
+  # A floor under every message that reaches this process. Leaf adds messages
+  # between versions, `Leaf.Collab` sends several more, and an unmatched
+  # `handle_info/2` takes the LiveView down with the editor sitting right
+  # there — which is a worse outcome than ignoring something we do not
+  # understand. Logged rather than silent, so a new message is discoverable
+  # instead of merely absent.
+  #
+  # Placed after every real clause: it matches anything.
   def handle_info(message, socket) do
     require Logger
 
-    Logger.debug("[knowledge_base] unhandled message in VaultLive: #{inspect(message)}")
+    Logger.debug(
+      "[knowledge_base] unhandled message in VaultLive: #{inspect(message, limit: 5, printable_limit: 100)}"
+    )
 
     {:noreply, socket}
   end
@@ -856,16 +907,34 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # hold unsaved keystrokes, so the change is announced and never applied behind
   # the author's back — `remote_change` raises the banner, the reload is theirs
   # to ask for.
-  defp apply_remote_note_change(socket) do
-    case Notes.get_note(socket.assigns.vault.uuid, socket.assigns.note.uuid) do
-      nil -> socket
-      note -> socket |> assign(:note, note) |> assign(:remote_change, true)
+  #
+  # `@note` is deliberately **not** replaced. Its `content_hash` is what the
+  # buffer was loaded from, and it is what the stale guard compares the file
+  # against. Taking the peer's row here (an earlier version did) armed the guard
+  # with *their* hash: the next keystroke saw the file "current" and wrote over
+  # their save — the one thing the banner exists to stop. Left alone, that
+  # keystroke is refused as `:stale` and the choice goes to the person.
+  defp apply_remote_note_change(socket), do: assign(socket, :remote_change, true)
+
+  # The open note's row, re-read after something elsewhere may have moved it —
+  # but only taken while it still describes the bytes the buffer came from. A
+  # different hash is a change to the text, which is announced instead (see
+  # `apply_remote_note_change/1`); a vanished row is left to the deletion
+  # message, or to the next save's `:missing_file`.
+  defp follow_open_note(%{assigns: %{note: nil}} = socket), do: socket
+
+  defp follow_open_note(%{assigns: %{note: note}} = socket) do
+    case Notes.get_note(socket.assigns.vault.uuid, note.uuid) do
+      %Note{content_hash: hash} = fresh when hash == note.content_hash ->
+        assign(socket, :note, fresh)
+
+      %Note{} ->
+        apply_remote_note_change(socket)
+
+      nil ->
+        socket
     end
   end
-
-  # A rescan elsewhere refreshes the sidebar, but never replaces the open
-  # buffer — that would discard whatever is being typed.
-  defp reload_open_note_if_idle(socket), do: socket
 
   defp reply_suggestions(editor_id, trigger, query, seq, results) do
     send_update(Leaf,
@@ -933,15 +1002,18 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   defp link_title(resolver, key, note, _can_write?) do
     case Links.candidate_count(resolver, key) do
       count when count > 1 ->
-        "#{count} notes share this title — this link resolves to #{note.relative_path}"
+        gettext("%{count} notes share this title — this link resolves to %{path}",
+          count: count,
+          path: note.relative_path
+        )
 
       _ ->
         note.relative_path
     end
   end
 
-  defp missing_title(true), do: "No note with this title yet — click to create it"
-  defp missing_title(false), do: "No note with this title yet"
+  defp missing_title(true), do: gettext("No note with this title yet — click to create it")
+  defp missing_title(false), do: gettext("No note with this title yet")
 
   # Leaf sends the bare target: the heading anchor and the alias arrive as
   # separate fields and are already stripped. Normalising it is what makes
@@ -1027,12 +1099,62 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
-  defp move_error(:refuse_descendant), do: "A folder cannot be moved inside itself."
-  defp move_error(:target_exists), do: "Something is already there."
-  defp move_error(:refuse_vault_root), do: "The vault root cannot be moved."
-  defp move_error(:unsafe_path), do: "That name is not allowed."
-  defp move_error(:not_found), do: "That folder no longer exists."
   defp move_error(reason), do: error_message(reason)
+
+  # A path-qualified title (`research/Ideas`, which is how an unresolved
+  # `[[research/Ideas]]` arrives on the create page) is a note in that folder,
+  # named by its last segment. A path-qualified link names its path from the
+  # vault root, so the folder replaces the selected one rather than nesting in
+  # it. Every segment passes the same check a typed name does; the folder is
+  # created on the way if it does not exist yet.
+  @doc false
+  @spec place_new_note(String.t(), String.t()) ::
+          {:ok, String.t(), String.t()} | {:error, term()}
+  def place_new_note(title, default_folder) when is_binary(title) do
+    case title |> String.split("/") |> Enum.map(&String.trim/1) do
+      [single] ->
+        {:ok, default_folder, single}
+
+      segments ->
+        case validate_segments(segments) do
+          {:ok, [name | folders]} -> {:ok, folders |> Enum.reverse() |> Path.join(), name}
+          error -> error
+        end
+    end
+  end
+
+  def place_new_note(_title, _default_folder), do: {:error, :blank}
+
+  # Every segment, reversed (the name first), or the first refusal.
+  defp validate_segments(segments) do
+    Enum.reduce_while(segments, {:ok, []}, fn segment, {:ok, acc} ->
+      case Storage.validate_filename(segment) do
+        {:ok, clean} -> {:cont, {:ok, [clean | acc]}}
+        {:error, _} = error -> {:halt, error}
+      end
+    end)
+  end
+
+  # `"root"` or a folder the index already holds — nothing else is a place a
+  # note may be moved to (see the `move_note` event).
+  defp existing_folder_path(_socket, folder) when folder in ["root", ""], do: {:ok, ""}
+
+  defp existing_folder_path(socket, folder) do
+    if Enum.any?(socket.assigns.folders, &(&1.relative_path == folder)),
+      do: {:ok, folder},
+      else: {:error, :not_found}
+  end
+
+  defp folder_trashed_message(folder, removed) do
+    ngettext(
+      "Moved “%{name}” and %{count} note in it to the trash.",
+      "Moved “%{name}” and %{count} notes in it to the trash.",
+      removed,
+      name: folder.name
+    )
+  end
+
+  defp read_only_message, do: gettext("You have read-only access to this vault.")
 
   # The explorer wants the Folder struct for the selected path, or nil for the
   # root and the all-notes view — it reads `.uuid` off it and compares.
@@ -1069,7 +1191,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         # same-folder/shortest-path tie-break.
         value: if(ambiguous?, do: drop_extension(note.relative_path), else: note.title),
         label: note.title,
-        sublabel: if(note.folder_path == "", do: "vault root", else: note.folder_path),
+        sublabel: if(note.folder_path == "", do: gettext("vault root"), else: note.folder_path),
         icon: "hero-document-text"
       }
     end)
@@ -1086,7 +1208,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       %{
         value: tag,
         label: "##{tag}",
-        sublabel: "#{count} #{if count == 1, do: "note", else: "notes"}",
+        sublabel: ngettext("%{count} note", "%{count} notes", count),
         icon: "hero-hashtag"
       }
     end)
@@ -1147,10 +1269,20 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           |> load_workspace()
           |> reload_open_note()
 
-        {:noreply, put_flash(socket, :info, "Rescan: #{Rescan.summarize(report)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           gettext("Rescan: %{summary}", summary: Rescan.summarize(report))
+         )}
 
       {:error, reason} ->
-        {:noreply, put_flash(socket, :error, "Rescan failed: #{error_message(reason)}")}
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gettext("Rescan failed: %{reason}", reason: error_message(reason))
+         )}
     end
   end
 
@@ -1162,7 +1294,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       nil ->
         socket
         |> assign(:note, nil)
-        |> put_flash(:info, "That note is no longer on disk.")
+        |> put_flash(:info, gettext("That note is no longer on disk."))
         |> push_patch(to: Paths.vault(socket.assigns.vault.slug))
 
       note ->
@@ -1286,51 +1418,12 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
-  # Total on purpose. Every caller is an error path, and a save that fails for
-  # an unforeseen reason must show a message rather than crash the LiveView on
-  # top of whatever already went wrong.
-  defp error_message(%Ecto.Changeset{} = changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
-    end)
-    |> Enum.map_join("; ", fn {field, messages} -> "#{field} #{Enum.join(messages, ", ")}" end)
-  end
-
-  defp error_message(:unauthorized), do: "You have read-only access to this vault."
-
-  defp error_message(:stale),
-    do:
-      "This note changed on disk since you opened it. Reload to see the new version, or save again to overwrite it."
-
-  defp error_message(:missing_file),
-    do: "This note's file is gone from disk. Rescan the vault, or save again to recreate it."
-
-  defp error_message({:forbidden_characters, chars}) do
-    "A name cannot contain #{Enum.join(chars, " ")} — " <>
-      "these break either the filesystem or [[link]] syntax. " <>
-      "Not allowed: #{PhoenixKitKnowledgeBase.Storage.forbidden_characters()}"
-  end
-
-  defp error_message(:blank), do: "A name cannot be empty."
-
-  defp error_message(:leading_dot),
-    do: "A name cannot start with a dot — that would hide the file."
-
-  defp error_message(:trailing_dot), do: "A name cannot end with a dot."
-  defp error_message(:too_long), do: "That name is too long for a filename."
-
-  defp error_message(:reserved),
-    do: "That name is reserved by Windows and would break syncing the vault there."
-
-  defp error_message(:already_exists), do: "A note with that name already exists in this folder."
-  defp error_message(:target_exists), do: "There is already a note at that path."
-  defp error_message(:unsafe_path), do: "That path is not inside the vault."
-  defp error_message(:enoent), do: "That file no longer exists on disk."
-  defp error_message(:eacces), do: "Permission denied writing to the vault directory."
-  defp error_message(other), do: "Could not save: #{inspect(other)}"
+  # Total on purpose — `Errors.message/1` answers anything. Every caller is an
+  # error path, and a save that fails for an unforeseen reason must show a
+  # message rather than crash the LiveView on top of whatever already went
+  # wrong.
+  defp error_message(:unauthorized), do: read_only_message()
+  defp error_message(reason), do: Errors.message(reason)
 
   # The template needs the id too, and `@editor_id` inside a function component
   # would read an assign that doesn't exist rather than this module attribute.
@@ -1376,98 +1469,110 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # Public so a test can pin the tokens. Leaf supplies a default that silently
   # breaks both triggers, so this is exactly the setting a regression would
   # remove without failing anything else.
+  #
+  # The popup headings are translated here, at call time, for both editors —
+  # the notes panel takes these configs as they are.
   @spec suggestion_configs() :: [map()]
-  def suggestion_configs, do: @suggestion_configs
+  def suggestion_configs do
+    Enum.map(@suggestion_configs, fn
+      %{trigger: "[["} = config -> Map.put(config, :label, gettext("Notes"))
+      %{trigger: "#"} = config -> Map.put(config, :label, gettext("Tags"))
+    end)
+  end
 
-  defp save_label(:saved), do: "Saved"
-  defp save_label(:saving), do: "Saving…"
-  defp save_label(:unsaved), do: "Unsaved"
+  defp save_label(:saved), do: gettext("Saved")
+  defp save_label(:unsaved), do: gettext("Not saved")
 
   defp save_class(:saved), do: "badge-ghost"
-  defp save_class(:saving), do: "badge-info"
   defp save_class(:unsaved), do: "badge-warning"
 
   # ── Render ────────────────────────────────────────────────────────────────
+
+  @doc false
+  # Core's admin bar renders this beside the trail (`page_toolbar`), with this
+  # LiveView's assigns, so its clicks arrive here — the page draws no header of
+  # its own under the bar.
+  #
+  # Below `sm` the buttons are icons only (each keeps its label as a tooltip and
+  # for screen readers); four labelled buttons do not fit a phone.
+  def header_toolbar(assigns) do
+    ~H"""
+    <div class="flex flex-wrap items-center gap-1 sm:gap-2">
+      <span class="badge badge-sm badge-ghost">
+        {if @vault.scope == "system", do: gettext("organisation"), else: gettext("personal")}
+      </span>
+      <span class="badge badge-sm badge-ghost">{Vaults.role_label(@role)}</span>
+      <.link
+        :if={@can_manage}
+        navigate={Paths.members(@vault.slug)}
+        class="btn btn-ghost btn-sm"
+        title={gettext("Members")}
+        aria-label={gettext("Members")}
+      >
+        <.icon name="hero-user-group" class="w-4 h-4" />
+        <span class="hidden sm:inline">{gettext("Members")}</span>
+      </.link>
+      <%!-- `data-drop-trash`: core's drag hook looks for the drop target
+           across the whole document, so it works from the header too. --%>
+      <button
+        type="button"
+        phx-click="toggle_trash"
+        data-drop-trash="true"
+        class={["btn btn-sm", if(@trash_open, do: "btn-active", else: "btn-ghost")]}
+        title={gettext("Trash")}
+        aria-label={gettext("Trash")}
+        aria-pressed={to_string(@trash_open)}
+      >
+        <.icon name="hero-trash" class="w-4 h-4" />
+        <span class="hidden sm:inline">{gettext("Trash")}</span>
+      </button>
+      <button
+        :if={@can_write}
+        type="button"
+        phx-click="rescan"
+        phx-disable-with={gettext("Rescanning…")}
+        class="btn btn-ghost btn-sm"
+        title={gettext("Re-read the vault directory and pick up edits made outside this app")}
+        aria-label={gettext("Rescan")}
+      >
+        <.icon name="hero-arrow-path" class="w-4 h-4" />
+        <span class="hidden sm:inline">{gettext("Rescan")}</span>
+      </button>
+      <.link
+        :if={@can_write}
+        patch={Paths.new_note(@vault.slug)}
+        class="btn btn-primary btn-sm"
+        title={gettext("New note")}
+        aria-label={gettext("New note")}
+      >
+        <.icon name="hero-document-plus" class="w-4 h-4" />
+        <span class="hidden sm:inline">{gettext("New note")}</span>
+      </.link>
+    </div>
+    """
+  end
 
   @impl true
   def render(assigns) do
     ~H"""
     <div :if={@vault} class="px-4 py-4">
-      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div class="flex items-center gap-2 min-w-0">
-          <.link navigate={Paths.vaults()} class="btn btn-ghost btn-xs">
-            <.icon name="hero-arrow-left" class="w-4 h-4" />
-          </.link>
-          <.icon name={@vault.icon || "hero-book-open"} class="w-5 h-5 shrink-0" />
-          <h1 class="text-xl font-semibold truncate">{@vault.name}</h1>
-          <span class="badge badge-sm badge-ghost">
-            {if @vault.scope == "system", do: "organisation", else: "personal"}
-          </span>
-          <span class="badge badge-sm badge-ghost">{@role}</span>
-        </div>
-
-        <%!-- Below `sm` these are icons only (each keeps its label as a
-             tooltip and for screen readers); four labelled buttons do not fit
-             a phone and pushed the page wider than the screen. --%>
-        <div class="flex flex-wrap items-center gap-1 sm:gap-2">
-          <.link
-            :if={@can_manage}
-            navigate={Paths.members(@vault.slug)}
-            class="btn btn-ghost btn-sm"
-            title="Members"
-            aria-label="Members"
-          >
-            <.icon name="hero-user-group" class="w-4 h-4" />
-            <span class="hidden sm:inline">Members</span>
-          </.link>
-          <button
-            type="button"
-            phx-click="toggle_trash"
-            data-drop-trash="true"
-            class={["btn btn-sm", if(@trash_open, do: "btn-active", else: "btn-ghost")]}
-            title="Trash"
-            aria-label="Trash"
-          >
-            <.icon name="hero-trash" class="w-4 h-4" />
-            <span class="hidden sm:inline">Trash</span>
-          </button>
-          <button
-            type="button"
-            phx-click="rescan"
-            class="btn btn-ghost btn-sm"
-            title="Re-read the vault directory and pick up edits made outside this app"
-            aria-label="Rescan"
-          >
-            <.icon name="hero-arrow-path" class="w-4 h-4" />
-            <span class="hidden sm:inline">Rescan</span>
-          </button>
-          <.link
-            :if={@can_write}
-            patch={Paths.new_note(@vault.slug)}
-            class="btn btn-primary btn-sm"
-            title="New note"
-            aria-label="New note"
-          >
-            <.icon name="hero-document-plus" class="w-4 h-4" />
-            <span class="hidden sm:inline">New note</span>
-          </.link>
-        </div>
-      </div>
-
       <div
         :if={@rescan_report && @rescan_report.errors != []}
         class="alert alert-warning mb-4 items-start"
+        role="alert"
       >
         <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
         <div class="min-w-0">
-          <p class="font-medium">Rescan finished with problems</p>
+          <p class="font-medium">{gettext("Rescan finished with problems")}</p>
           <ul class="mt-1 text-sm space-y-0.5">
             <li :for={error <- @rescan_report.errors} class="truncate">
               <code>{error.path}</code> — {error.reason}
             </li>
           </ul>
         </div>
-        <button type="button" phx-click="dismiss_rescan" class="btn btn-ghost btn-xs">Dismiss</button>
+        <button type="button" phx-click="dismiss_rescan" class="btn btn-ghost btn-xs">
+          {gettext("Dismiss")}
+        </button>
       </div>
 
       <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
@@ -1482,7 +1587,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             aria-controls="kb-sidebar"
           >
             <.icon name={if @files_open, do: "hero-x-mark", else: "hero-bars-3"} class="w-4 h-4" />
-            {if @files_open, do: "Hide files", else: "Files"}
+            {if @files_open, do: gettext("Hide files"), else: gettext("Files")}
           </button>
         </div>
 
@@ -1521,7 +1626,12 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             error={@note_error}
           />
 
-          <.empty_pane :if={@live_action != :new and is_nil(@note)} note_count={@note_count} />
+          <.empty_pane
+            :if={@live_action != :new and is_nil(@note)}
+            note_count={@note_count}
+            vault={@vault}
+            can_write={@can_write}
+          />
 
           <.note_pane
             :if={@note}
@@ -1598,61 +1708,74 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     >
       <p
         class="text-xs text-base-content/40 truncate"
-        title={"These notes are files on disk: " <> @directory}
+        title={gettext("These notes are files on disk: %{directory}", directory: @directory)}
       >
         <.icon name="hero-folder-open" class="w-3 h-3 inline-block" />
         {@directory}
       </p>
 
-      <form phx-change="search" phx-submit="search" id="kb-search-form" class="relative">
-        <input
-          type="search"
-          name="query"
+      <%!-- Core's search row. Its input fires `search` with `query`, and the
+           ✕ beside it is this page's own: the toolbar has no clear. --%>
+      <div class="flex items-center gap-1">
+        <.search_toolbar
+          id="kb-search-form"
           value={@search_query}
-          phx-debounce="300"
-          placeholder="Search this vault…"
-          class="input input-sm input-bordered w-full pr-8"
+          name="query"
+          on_change="search"
+          placeholder={gettext("Search this vault…")}
+          class="flex-1 min-w-0"
         />
         <button
           :if={@search_query != ""}
           type="button"
           phx-click="clear_search"
-          class="absolute right-1 top-1/2 -translate-y-1/2 btn btn-ghost btn-xs btn-circle"
-          aria-label="Clear search"
+          class="btn btn-ghost btn-xs btn-circle"
+          title={gettext("Clear search")}
+          aria-label={gettext("Clear search")}
         >
           <.icon name="hero-x-mark" class="w-3 h-3" />
         </button>
-      </form>
+      </div>
 
       <section :if={@trash_open} class="space-y-2">
         <div class="flex items-center justify-between">
           <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-            Trash ({length(@trash)})
+            {gettext("Trash (%{count})", count: length(@trash))}
           </h2>
           <button
             :if={@trash != [] and @can_write}
             type="button"
             phx-click="empty_trash"
-            data-confirm="Permanently delete everything in the trash? This cannot be undone."
+            data-confirm={
+              gettext("Permanently delete everything in the trash? This cannot be undone.")
+            }
             class="btn btn-ghost btn-xs text-error"
           >
-            Empty
+            {gettext("Empty trash")}
           </button>
         </div>
 
         <p class="text-xs text-base-content/50">
-          Deleted notes are moved to <code>{PhoenixKitKnowledgeBase.Storage.trash_dir()}</code>
-          inside the vault, not removed from disk.
+          {gettext("Deleted notes are moved to %{folder} inside the vault, not removed from disk.",
+            folder: PhoenixKitKnowledgeBase.Storage.trash_dir()
+          )}
         </p>
 
-        <p :if={@trash == []} class="text-sm text-base-content/50 italic">Trash is empty.</p>
+        <.empty_state
+          :if={@trash == []}
+          title={gettext("Trash is empty.")}
+          icon="hero-trash"
+          class="py-4"
+        />
 
         <ul class="space-y-1">
           <li :for={entry <- @trash} class="rounded border border-base-300 p-2 space-y-1">
             <p class="text-sm truncate" title={entry.original_path}>{entry.title}</p>
             <p class="text-xs text-base-content/50 truncate">{entry.original_path}</p>
             <p class="text-xs text-base-content/40">
-              deleted {Calendar.strftime(entry.deleted_at, "%Y-%m-%d %H:%M")}
+              {gettext("deleted %{date}",
+                date: PhoenixKit.Utils.Date.format_datetime_with_user_format(entry.deleted_at)
+              )}
             </p>
             <div :if={@can_write} class="flex gap-1">
               <button
@@ -1661,16 +1784,20 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
                 phx-value-path={entry.trash_path}
                 class="btn btn-xs btn-outline flex-1"
               >
-                Restore
+                {gettext("Restore")}
               </button>
               <button
                 type="button"
                 phx-click="purge_note"
                 phx-value-path={entry.trash_path}
-                data-confirm={"Permanently delete “#{entry.title}”? This cannot be undone."}
+                data-confirm={
+                  gettext("Permanently delete “%{title}”? This cannot be undone.",
+                    title: entry.title
+                  )
+                }
                 class="btn btn-xs btn-ghost text-error"
               >
-                Delete
+                {gettext("Delete permanently")}
               </button>
             </div>
           </li>
@@ -1682,11 +1809,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       `:if={@search_results}` on its own would have been fine. --%>
       <section :if={not is_nil(@search_results) and not @trash_open} class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          {length(@search_results)} results
+          {ngettext("%{count} result", "%{count} results", length(@search_results))}
         </h2>
-        <p :if={@search_results == []} class="text-sm text-base-content/50 italic">
-          Nothing matched. Full-text search matches whole words.
-        </p>
+        <.empty_state
+          :if={@search_results == []}
+          title={gettext("Nothing matched.")}
+          description={gettext("Full-text search matches whole words.")}
+          icon="hero-magnifying-glass"
+          class="py-4"
+        />
         <ul class="space-y-1">
           <li :for={result <- @search_results}>
             <.link
@@ -1784,20 +1915,22 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           selector="[data-context-kind=folder]"
           within="#kb-sidebar"
           value_name={["folder-uuid", "folder_uuid"]}
-          label="Folder actions"
+          label={gettext("Folder actions")}
         >
           <.context_menu_button
             phx-click="start_rename_folder"
             phx-value-source="sidebar"
             icon="hero-pencil"
-            label="Rename"
+            label={gettext("Rename")}
           />
           <.context_menu_divider />
           <.context_menu_button
             phx-click="trash_folder"
-            data-confirm="Move this folder to the trash, including every note and subfolder inside it?"
+            data-confirm={
+              gettext("Move this folder to the trash, including every note and subfolder inside it?")
+            }
             icon="hero-trash"
-            label="Move to trash"
+            label={gettext("Move to trash")}
             variant="error"
           />
         </.context_menu>
@@ -1807,15 +1940,19 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           selector="[data-context-kind=item]"
           within="#kb-sidebar"
           value_name="file_uuid"
-          label="Note actions"
+          label={gettext("Note actions")}
         >
-          <.context_menu_button phx-click="open_note" icon="hero-document-text" label="Open" />
+          <.context_menu_button
+            phx-click="open_note"
+            icon="hero-document-text"
+            label={gettext("Open")}
+          />
           <.context_menu_button
             :if={@can_write}
             phx-click="trash_file"
-            data-confirm="Move this note to the trash?"
+            data-confirm={gettext("Move this note to the trash?")}
             icon="hero-trash"
-            label="Move to trash"
+            label={gettext("Move to trash")}
             variant="error"
           />
         </.context_menu>
@@ -1835,22 +1972,36 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             type="button"
             phx-click="delete_folder"
             phx-value-uuid={current_folder(@folders, @selected_folder).uuid}
-            data-confirm={"Move “#{current_folder(@folders, @selected_folder).name}” to the trash, including every note and subfolder inside it?"}
+            data-confirm={
+              gettext(
+                "Move “%{name}” to the trash, including every note and subfolder inside it?",
+                name: current_folder(@folders, @selected_folder).name
+              )
+            }
             class="btn btn-ghost btn-xs text-error"
           >
-            <.icon name="hero-trash" class="w-3 h-3" /> Delete folder
+            <.icon name="hero-trash" class="w-3 h-3" /> {gettext("Delete folder")}
           </button>
         </div>
 
-        <form :if={@adding_folder} phx-submit="create_folder" id="kb-folder-form" class="flex gap-1">
-          <input
+        <form
+          :if={@adding_folder}
+          phx-submit="create_folder"
+          id="kb-folder-form"
+          class="flex items-end gap-1"
+        >
+          <.input
+            id="kb-folder-name"
             type="text"
             name="name"
-            placeholder="Folder name"
+            value=""
+            label={gettext("New folder")}
+            placeholder={gettext("Folder name")}
             autocomplete="off"
-            class="input input-xs input-bordered flex-1"
+            class="input-xs"
+            wrapper_class="flex-1 min-w-0"
           />
-          <button type="submit" class="btn btn-xs btn-primary">Add</button>
+          <button type="submit" class="btn btn-xs btn-primary">{gettext("Add")}</button>
         </form>
       </div>
 
@@ -1865,9 +2016,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         class="space-y-1"
       >
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          Notes · #{@selected_tag}
+          {gettext("Notes · #%{tag}", tag: @selected_tag)}
         </h2>
-        <p :if={@notes == []} class="text-sm text-base-content/50 italic">Nothing here yet.</p>
+        <.empty_state
+          :if={@notes == []}
+          title={gettext("Nothing here yet.")}
+          class="py-4"
+        />
         <ul class="space-y-0.5">
           <li :for={item <- @notes}>
             <.link
@@ -1885,13 +2040,16 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       </section>
 
       <section :if={@tags != [] and not @trash_open} class="space-y-1">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">Tags</h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
+          {gettext("Tags")}
+        </h2>
         <div class="flex flex-wrap gap-1">
           <button
             :for={{tag, count} <- @tags}
             type="button"
             phx-click="select_tag"
             phx-value-tag={tag}
+            aria-pressed={to_string(@selected_tag == tag)}
             class={[
               "badge badge-sm gap-1",
               if(@selected_tag == tag, do: "badge-primary", else: "badge-ghost")
@@ -1904,10 +2062,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
       <section :if={@unresolved != [] and not @trash_open} class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          Unresolved links
+          {gettext("Unresolved links")}
         </h2>
         <p class="text-xs text-base-content/50">
-          Linked to, but not written yet.
+          {gettext("Linked to, but not written yet.")}
         </p>
         <ul class="space-y-0.5">
           <li :for={item <- @unresolved}>
@@ -1928,16 +2086,29 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # ── Panes ─────────────────────────────────────────────────────────────────
 
   attr :note_count, :integer, required: true
+  attr :vault, :any, required: true
+  attr :can_write, :boolean, required: true
 
   defp empty_pane(assigns) do
     ~H"""
-    <div class="rounded-lg border border-dashed border-base-300 p-12 text-center">
-      <.icon name="hero-document-text" class="w-8 h-8 mx-auto text-base-content/30" />
-      <p class="mt-3 text-base-content/60">
-        {if @note_count == 0,
-          do: "This vault is empty. Create your first note.",
-          else: "Pick a note from the sidebar."}
-      </p>
+    <div class="rounded-lg border border-dashed border-base-300">
+      <.empty_state
+        variant="featured"
+        icon="hero-document-text"
+        title={
+          if @note_count == 0,
+            do: gettext("This vault is empty."),
+            else: gettext("Pick a note from the sidebar.")
+        }
+        description={if @note_count == 0 and @can_write, do: gettext("Create your first note.")}
+        class="py-12"
+      >
+        <:cta :if={@note_count == 0 and @can_write}>
+          <.link patch={Paths.new_note(@vault.slug)} class="btn btn-primary btn-sm">
+            <.icon name="hero-document-plus" class="w-4 h-4" /> {gettext("New note")}
+          </.link>
+        </:cta>
+      </.empty_state>
     </div>
     """
   end
@@ -1951,33 +2122,49 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     ~H"""
     <div class="rounded-lg border border-base-300 bg-base-100 p-6 max-w-xl">
       <h2 class="text-lg font-medium">
-        {if @title == "", do: "New note", else: "“#{@title}” doesn't exist yet"}
+        {if @title == "",
+          do: gettext("New note"),
+          else: gettext("“%{title}” doesn't exist yet", title: @title)}
       </h2>
       <p class="mt-1 text-sm text-base-content/60">
         {if @title == "",
           do:
-            "Give it a title. That title is the filename, so it has to be unique inside its folder — two folders may each hold an “Ideas”, and a bare [[Ideas]] then resolves to the nearest one.",
+            gettext(
+              "Give it a title. That title is the file name, so it has to be unique inside its folder — two folders may each hold an “Ideas”, and a bare [[Ideas]] then resolves to the nearest one."
+            ),
           else:
-            "Something links here. Create the note and every link waiting for this title resolves to it."}
+            gettext(
+              "Something links here. Create the note and every link waiting for this title resolves to it."
+            )}
       </p>
 
-      <p :if={@error} class="mt-3 text-sm text-error">{@error}</p>
+      <p :if={@error} class="mt-3 text-sm text-error" role="alert">{@error}</p>
 
-      <form :if={@can_write} phx-submit="create_note" id="kb-new-note-form" class="mt-4 flex gap-2">
-        <input
+      <form
+        :if={@can_write}
+        phx-submit="create_note"
+        id="kb-new-note-form"
+        class="mt-4 flex items-end gap-2"
+      >
+        <.input
+          id="kb-new-note-title"
           type="text"
           name="title"
           value={@title}
-          placeholder="Note title"
+          label={gettext("Title")}
+          placeholder={gettext("Note title")}
           autocomplete="off"
           required
-          class="input input-sm input-bordered flex-1"
+          class="input-sm"
+          wrapper_class="flex-1 min-w-0"
         />
-        <button type="submit" class="btn btn-primary btn-sm">Create note</button>
+        <button type="submit" class="btn btn-primary btn-sm" phx-disable-with={gettext("Creating…")}>
+          {gettext("Create note")}
+        </button>
       </form>
 
       <p :if={not @can_write} class="mt-4 text-sm text-base-content/60">
-        You have read-only access to this vault.
+        {gettext("You have read-only access to this vault.")}
       </p>
     </div>
     """
@@ -2005,12 +2192,16 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             readonly={not @can_write}
             phx-blur="rename_note"
             class="input input-ghost w-full text-xl font-semibold px-1"
-            aria-label="Note title"
+            aria-label={gettext("Note title")}
           />
         </form>
 
         <div class="flex items-center gap-2">
-          <span :if={@can_write} class={["badge badge-sm", save_class(@save_status)]}>
+          <span
+            :if={@can_write}
+            class={["badge badge-sm", save_class(@save_status)]}
+            role="status"
+          >
             {save_label(@save_status)}
           </span>
 
@@ -2018,82 +2209,95 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
             :if={@can_write}
             type="button"
             phx-click="delete_note"
-            data-confirm={"Move “#{@note.title}” to the trash? Links to it become unresolved until it is restored."}
+            data-confirm={
+              gettext(
+                "Move “%{title}” to the trash? Links to it become unresolved until it is restored.",
+                title: @note.title
+              )
+            }
             class="btn btn-ghost btn-sm text-error"
-            aria-label="Delete note"
+            title={gettext("Move to trash")}
+            aria-label={gettext("Move to trash")}
           >
             <.icon name="hero-trash" class="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      <div :if={@conflict} class="alert alert-warning items-start">
+      <div :if={@conflict} class="alert alert-warning items-start" role="alert">
         <.icon name="hero-exclamation-triangle" class="w-5 h-5" />
         <div class="min-w-0">
-          <p class="font-medium">This note changed since you opened it</p>
+          <p class="font-medium">{gettext("This note changed since you opened it")}</p>
           <p class="text-sm">
-            Something else edited <code>{@note.relative_path}</code>
-            — another browser, another person, or an editor on the server.
-            <strong>Your changes are not being saved</strong>
-            until you choose.
+            {gettext(
+              "Something else edited %{path} — another browser, another person, or an editor on the server. Your changes are not being saved until you choose.",
+              path: @note.relative_path
+            )}
           </p>
         </div>
         <div class="flex gap-1">
           <button type="button" phx-click="reload_note" class="btn btn-sm">
-            Discard mine, reload
+            {gettext("Discard mine, reload")}
           </button>
           <button
             type="button"
             phx-click="overwrite_note"
-            data-confirm="Overwrite the other version with what's in your editor?"
+            data-confirm={gettext("Overwrite the other version with what's in your editor?")}
             class="btn btn-sm btn-warning"
           >
-            Keep mine, overwrite
+            {gettext("Keep mine, overwrite")}
           </button>
         </div>
       </div>
 
-      <div :if={@remote_change and not @conflict} class="alert alert-info items-start">
+      <div :if={@remote_change and not @conflict} class="alert alert-info items-start" role="status">
         <.icon name="hero-arrow-path" class="w-5 h-5" />
         <div class="min-w-0">
-          <p class="font-medium">Someone else just saved this note</p>
+          <p class="font-medium">{gettext("Someone else just saved this note")}</p>
           <p class="text-sm">
-            You are editing, so nothing has been replaced. Reload to see their
-            version — anything you have typed and not saved will be lost.
+            {gettext(
+              "Nothing here has been replaced. Reload to see their version — anything you have not saved is lost. Keep editing, and your next save asks before overwriting theirs."
+            )}
           </p>
         </div>
         <div class="flex gap-1">
-          <button type="button" phx-click="reload_note" class="btn btn-sm">Reload</button>
+          <button type="button" phx-click="reload_note" class="btn btn-sm">
+            {gettext("Reload")}
+          </button>
           <button type="button" phx-click="dismiss_remote_change" class="btn btn-ghost btn-sm">
-            Keep editing
+            {gettext("Keep editing")}
           </button>
         </div>
       </div>
 
       <div class="flex flex-wrap items-center gap-2 text-xs text-base-content/60">
         <form :if={@can_write} phx-change="move_note" id="kb-move-form">
-          <select name="folder" class="select select-xs select-bordered">
-            <option value="root" selected={@note.folder_path == ""}>Vault root</option>
-            <option
-              :for={folder <- @folders}
-              value={folder.relative_path}
-              selected={@note.folder_path == folder.relative_path}
-            >
-              {folder.relative_path}
-            </option>
-          </select>
+          <.select
+            id="kb-move-folder"
+            name="folder"
+            value={if @note.folder_path == "", do: "root", else: @note.folder_path}
+            options={[
+              {gettext("Vault root"), "root"}
+              | Enum.map(@folders, &{&1.relative_path, &1.relative_path})
+            ]}
+            class="select-xs"
+            aria-label={gettext("Folder")}
+            title={gettext("Move to folder")}
+          />
         </form>
 
-        <code class="opacity-60" title="Path inside the vault directory">{@note.relative_path}</code>
+        <code class="opacity-60" title={gettext("Path inside the vault directory")}>
+          {@note.relative_path}
+        </code>
 
         <span :for={tag <- @note.tags} class="badge badge-ghost badge-sm">#{tag}</span>
       </div>
 
-      <p :if={@error} class="text-sm text-error">{@error}</p>
+      <p :if={@error} class="text-sm text-error" role="alert">{@error}</p>
 
       <div :if={@note.frontmatter != %{}} class="rounded border border-base-300 bg-base-200/40 p-3">
         <h3 class="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-1">
-          Properties
+          {gettext("Properties")}
         </h3>
         <dl class="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
           <div :for={{key, value} <- Enum.sort(@note.frontmatter)} class="contents">
@@ -2105,10 +2309,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
       <div class="space-y-2">
         <p class="text-xs text-base-content/50">
-          Type <code>[[</code>
-          to link a note or <code>#</code>
-          for a tag — ↑↓ to move, Enter to accept. Click a link to open it.
-          Saves as you write.
+          {gettext(
+            "Type [[ to link a note or # for a tag — ↑↓ to move, Enter to accept. Click a link to open it. Saves as you write."
+          )}
         </p>
 
         <.live_component
@@ -2120,10 +2323,11 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           suggestions={suggestion_configs()}
           wiki_links={%{resolve: true, follow: :click}}
           deny={[:visual_mode, :html_mode]}
-          placeholder="Write in markdown. Link with [[Note title]]."
+          placeholder={gettext("Write in markdown. Link with [[Note title]].")}
           height="60vh"
           debounce={500}
           readonly={not @can_write}
+          gettext_backend={PhoenixKitKnowledgeBase.Gettext}
         />
       </div>
     </article>
@@ -2141,11 +2345,13 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     <aside class={["space-y-4", @class]}>
       <section class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          Linked mentions ({length(@backlinks)})
+          {gettext("Linked mentions (%{count})", count: length(@backlinks))}
         </h2>
-        <p :if={@backlinks == []} class="text-sm text-base-content/50 italic">
-          Nothing links here yet.
-        </p>
+        <.empty_state
+          :if={@backlinks == []}
+          title={gettext("Nothing links here yet.")}
+          class="py-4"
+        />
         <ul class="space-y-0.5">
           <li :for={source <- @backlinks}>
             <.link
@@ -2160,7 +2366,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
       <section :if={@outgoing != []} class="space-y-1">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50">
-          Links from this note
+          {gettext("Links from this note")}
         </h2>
         <ul class="space-y-0.5">
           <li :for={link <- @outgoing}>
@@ -2175,6 +2381,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
               :if={is_nil(link.target_note_uuid)}
               patch={Paths.new_note(@vault.slug, link.target_title)}
               class="block rounded px-2 py-1 text-sm truncate hover:bg-base-200 text-warning"
+              title={gettext("Not written yet")}
             >
               {link.target_title}
             </.link>
@@ -2185,8 +2392,25 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     """
   end
 
-  defp format_property(value) when is_list(value), do: Enum.map_join(value, ", ", &to_string/1)
-  defp format_property(value) when is_map(value), do: inspect(value)
-  defp format_property(nil), do: "—"
-  defp format_property(value), do: to_string(value)
+  @doc false
+  # Front matter is any YAML: a list of maps (`authors: [{name: …}]`) is as
+  # valid as a list of strings, and `to_string/1` on a map raises — which took
+  # the page down on every render of that note. Total, and recursive.
+  @spec format_property(term()) :: String.t()
+  def format_property(nil), do: "—"
+  def format_property(value) when is_binary(value), do: value
+
+  def format_property(value) when is_list(value),
+    do: Enum.map_join(value, ", ", &format_property/1)
+
+  def format_property(value) when is_map(value) do
+    value
+    |> Enum.sort()
+    |> Enum.map_join("; ", fn {key, inner} -> "#{key}: #{format_property(inner)}" end)
+  end
+
+  def format_property(value) when is_number(value) or is_boolean(value) or is_atom(value),
+    do: to_string(value)
+
+  def format_property(value), do: inspect(value)
 end

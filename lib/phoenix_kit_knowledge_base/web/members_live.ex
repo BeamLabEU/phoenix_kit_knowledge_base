@@ -11,36 +11,55 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
   which is what stops a vault ending up with nobody able to administer it.
   """
   use PhoenixKitWeb, :live_view
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
   alias PhoenixKit.Users.Auth
   alias PhoenixKitKnowledgeBase.{Paths, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.VaultMember
 
   @impl true
-  def mount(%{"vault" => slug}, _session, socket) do
+  def mount(_params, _session, socket) do
+    {:ok,
+     socket
+     |> assign(:vault, nil)
+     |> assign(:query, "")
+     |> assign(:candidates, [])
+     |> assign(:owner, nil)
+     |> assign(:members, [])}
+  end
+
+  # Access is decided here, once per navigation, rather than in `mount/3`,
+  # which runs twice.
+  @impl true
+  def handle_params(%{"vault" => slug}, _uri, socket) do
     case Vaults.fetch_for(slug, socket.assigns.phoenix_kit_current_scope) do
       {:ok, vault, role} ->
         if Vaults.can?(role, :manage) do
-          {:ok,
+          {:noreply,
            socket
            |> assign(:vault, vault)
-           |> assign(:page_title, "#{vault.name} · Members")
-           |> assign(:page_subtitle, "Who can open this vault")
-           |> assign(:query, "")
-           |> assign(:candidates, [])
+           # Core's admin bar draws "Knowledge Base / <vault> / Members".
+           |> assign(:page_section, gettext("Knowledge Base"))
+           |> assign(:page_section_path, Paths.vaults())
+           |> assign(:page_crumbs, [%{label: vault.name, path: Paths.vault(vault.slug)}])
+           |> assign(:page_title, gettext("Members"))
+           |> assign(:page_subtitle, gettext("Who can open this vault"))
            |> assign(:owner, owner_record(vault))
            |> load_members()}
         else
-          {:ok,
+          {:noreply,
            socket
-           |> put_flash(:error, "Only a vault owner can manage its members.")
+           |> put_flash(:error, gettext("Only a vault owner can manage its members."))
            |> push_navigate(to: Paths.vault(vault.slug))}
         end
 
       {:error, :not_found} ->
-        {:ok,
+        {:noreply,
          socket
-         |> put_flash(:error, "That vault does not exist, or you do not have access to it.")
+         |> put_flash(
+           :error,
+           gettext("That vault does not exist, or you do not have access to it.")
+         )
          |> push_navigate(to: Paths.vaults())}
     end
   end
@@ -72,7 +91,7 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
        |> load_members()}
     else
       {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
-      _ -> {:noreply, put_flash(socket, :error, "Could not add that person.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not add that person."))}
     end
   end
 
@@ -83,7 +102,7 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
       {:noreply, load_members(socket)}
     else
       {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
-      _ -> {:noreply, put_flash(socket, :error, "Could not change that role.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not change that role."))}
     end
   end
 
@@ -94,15 +113,18 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
       {:noreply, load_members(socket)}
     else
       {:error, :unauthorized} -> {:noreply, unauthorized(socket)}
-      _ -> {:noreply, put_flash(socket, :error, "Could not remove that member.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("Could not remove that member."))}
     end
   end
 
-  # `mount/3` proves the role once. These events grant and revoke access to the
-  # vault, and this LiveView can stay open for hours — long enough for the
-  # ownership that opened it to have been taken away. Re-resolving from the
-  # current scope on every mutation is the same rule `IndexLive.delete_vault`
-  # already follows: trust the scope, never the page that rendered the button.
+  # `handle_params/3` proves the role once. These events grant and revoke
+  # access to the vault, and this LiveView can stay open for hours — long
+  # enough for the ownership that opened it to have been taken away.
+  # Re-resolving from the current scope on every mutation is the same rule
+  # `IndexLive.delete_vault` already follows: trust the scope, never the page
+  # that rendered the button.
+  defp require_manage(%{assigns: %{vault: nil}}), do: {:error, :unauthorized}
+
   defp require_manage(socket) do
     with {:ok, _vault, role} <-
            Vaults.fetch_for(socket.assigns.vault.slug, socket.assigns.phoenix_kit_current_scope),
@@ -115,7 +137,7 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
 
   defp unauthorized(socket) do
     socket
-    |> put_flash(:error, "Only a vault owner can manage its members.")
+    |> put_flash(:error, gettext("Only a vault owner can manage its members."))
     |> push_navigate(to: Paths.vault(socket.assigns.vault.slug))
   end
 
@@ -131,130 +153,131 @@ defmodule PhoenixKitKnowledgeBase.Web.MembersLive do
 
   defp owner_record(_vault), do: nil
 
+  defp role_options, do: Enum.map(VaultMember.roles(), &{Vaults.role_label(&1), &1})
+
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="mx-auto max-w-3xl px-4 py-6 space-y-6">
-      <div class="flex items-center gap-2">
-        <.link navigate={Paths.vault(@vault.slug)} class="btn btn-ghost btn-xs">
-          <.icon name="hero-arrow-left" class="w-4 h-4" />
-        </.link>
-        <div>
-          <h1 class="text-xl font-semibold">{@vault.name} · Members</h1>
-          <p class="text-sm text-base-content/60">
-            {if @vault.scope == "system",
-              do:
-                "An organisation vault. Anyone who can manage organisation vaults is already an owner — members listed here are additional people.",
-              else: "A personal vault. Nobody sees it unless they are listed here."}
-          </p>
-        </div>
-      </div>
+    <div :if={@vault} class="mx-auto max-w-3xl px-4 py-6 space-y-6">
+      <p class="text-sm text-base-content/60">
+        {if @vault.scope == "system",
+          do:
+            gettext(
+              "An organisation vault. Anyone who can manage organisation vaults is already an owner — members listed here are additional people."
+            ),
+          else: gettext("A personal vault. Nobody sees it unless they are listed here.")}
+      </p>
 
-      <section class="card bg-base-100 border border-base-300">
-        <div class="card-body gap-3">
-          <h2 class="font-medium">Add someone</h2>
+      <.form_section title={gettext("Add someone")}>
+        <form phx-change="search" id="kb-member-search" phx-submit="search">
+          <.input
+            id="kb-member-search-input"
+            type="text"
+            name="value"
+            value={@query}
+            phx-debounce="300"
+            label={gettext("Find a person")}
+            placeholder={gettext("Search by name, username or email…")}
+            autocomplete="off"
+            class="input-sm w-full"
+          />
+        </form>
 
-          <form phx-change="search" id="kb-member-search" phx-submit="search">
-            <input
-              type="text"
-              name="value"
-              value={@query}
-              phx-debounce="300"
-              placeholder="Search by name, username or email…"
-              autocomplete="off"
-              class="input input-sm input-bordered w-full"
-            />
-          </form>
+        <p :if={@query != "" and @candidates == []} class="text-sm text-base-content/50">
+          {gettext(
+            "No matches. Search needs at least two characters, and people already on the list are hidden."
+          )}
+        </p>
 
-          <p :if={@query != "" and @candidates == []} class="text-sm text-base-content/50">
-            No matches. Search needs at least two characters, and people already on the list are hidden.
-          </p>
-
-          <ul :if={@candidates != []} class="divide-y divide-base-200">
-            <li :for={user <- @candidates} class="flex items-center justify-between gap-3 py-2">
-              <div class="min-w-0">
-                <p class="text-sm truncate">{Vaults.user_label(user)}</p>
-                <p class="text-xs text-base-content/50 truncate">{user.email}</p>
-              </div>
-              <div class="flex gap-1 shrink-0">
-                <button
-                  :for={role <- ["viewer", "editor", "owner"]}
-                  type="button"
-                  phx-click="add_member"
-                  phx-value-user={user.uuid}
-                  phx-value-role={role}
-                  class="btn btn-xs btn-outline"
-                >
-                  {role}
-                </button>
-              </div>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <section class="card bg-base-100 border border-base-300">
-        <div class="card-body gap-3">
-          <h2 class="font-medium">Members</h2>
-
-          <div
-            :if={@owner}
-            class="flex items-center justify-between gap-3 py-2 border-b border-base-200"
-          >
+        <ul :if={@candidates != []} class="divide-y divide-base-200">
+          <li :for={user <- @candidates} class="flex items-center justify-between gap-3 py-2">
             <div class="min-w-0">
-              <p class="text-sm truncate">{Vaults.user_label(@owner)}</p>
-              <p class="text-xs text-base-content/50 truncate">{@owner.email}</p>
+              <p class="text-sm truncate">{Vaults.user_label(user)}</p>
+              <p class="text-xs text-base-content/50 truncate">{user.email}</p>
             </div>
-            <span
-              class="badge badge-sm badge-primary shrink-0"
-              title="The vault's creator — cannot be removed"
+            <div
+              class="flex gap-1 shrink-0"
+              role="group"
+              aria-label={gettext("Add %{name} as", name: Vaults.user_label(user))}
             >
-              owner
-            </span>
+              <button
+                :for={role <- ["viewer", "editor", "owner"]}
+                type="button"
+                phx-click="add_member"
+                phx-value-user={user.uuid}
+                phx-value-role={role}
+                class="btn btn-xs btn-outline"
+              >
+                {Vaults.role_label(role)}
+              </button>
+            </div>
+          </li>
+        </ul>
+      </.form_section>
+
+      <.form_section title={gettext("Members")}>
+        <div
+          :if={@owner}
+          class="flex items-center justify-between gap-3 py-2 border-b border-base-200"
+        >
+          <div class="min-w-0">
+            <p class="text-sm truncate">{Vaults.user_label(@owner)}</p>
+            <p class="text-xs text-base-content/50 truncate">{@owner.email}</p>
           </div>
-
-          <p :if={@members == []} class="text-sm text-base-content/50 italic">
-            {if @owner, do: "Nobody else has access.", else: "No members yet."}
-          </p>
-
-          <ul :if={@members != []} class="divide-y divide-base-200">
-            <li :for={entry <- @members} class="flex items-center justify-between gap-3 py-2">
-              <div class="min-w-0">
-                <p class="text-sm truncate">{Vaults.user_label(entry.user)}</p>
-                <p class="text-xs text-base-content/50 truncate">
-                  {entry.user && entry.user.email}
-                </p>
-              </div>
-
-              <div class="flex items-center gap-2 shrink-0">
-                <form phx-change="update_role" id={"kb-role-#{entry.member.uuid}"}>
-                  <input type="hidden" name="member" value={entry.member.uuid} />
-                  <select name="role" class="select select-xs select-bordered">
-                    <option
-                      :for={role <- VaultMember.roles()}
-                      value={role}
-                      selected={entry.member.role == role}
-                    >
-                      {role}
-                    </option>
-                  </select>
-                </form>
-
-                <button
-                  type="button"
-                  phx-click="remove_member"
-                  phx-value-member={entry.member.uuid}
-                  data-confirm={"Remove #{Vaults.user_label(entry.user)} from this vault?"}
-                  class="btn btn-ghost btn-xs text-error"
-                  aria-label="Remove member"
-                >
-                  <.icon name="hero-x-mark" class="w-4 h-4" />
-                </button>
-              </div>
-            </li>
-          </ul>
+          <span
+            class="badge badge-sm badge-primary shrink-0"
+            title={gettext("The vault's creator — cannot be removed")}
+          >
+            {Vaults.role_label("owner")}
+          </span>
         </div>
-      </section>
+
+        <.empty_state
+          :if={@members == []}
+          title={if @owner, do: gettext("Nobody else has access."), else: gettext("No members yet.")}
+          icon="hero-user-group"
+          class="py-4"
+        />
+
+        <ul :if={@members != []} class="divide-y divide-base-200">
+          <li :for={entry <- @members} class="flex items-center justify-between gap-3 py-2">
+            <div class="min-w-0">
+              <p class="text-sm truncate">{Vaults.user_label(entry.user)}</p>
+              <p class="text-xs text-base-content/50 truncate">
+                {entry.user && entry.user.email}
+              </p>
+            </div>
+
+            <div class="flex items-center gap-2 shrink-0">
+              <form phx-change="update_role" id={"kb-role-#{entry.member.uuid}"}>
+                <input type="hidden" name="member" value={entry.member.uuid} />
+                <.select
+                  id={"kb-role-select-#{entry.member.uuid}"}
+                  name="role"
+                  value={entry.member.role}
+                  options={role_options()}
+                  class="select-xs"
+                  aria-label={gettext("Role of %{name}", name: Vaults.user_label(entry.user))}
+                />
+              </form>
+
+              <button
+                type="button"
+                phx-click="remove_member"
+                phx-value-member={entry.member.uuid}
+                data-confirm={
+                  gettext("Remove %{name} from this vault?", name: Vaults.user_label(entry.user))
+                }
+                class="btn btn-ghost btn-xs text-error"
+                title={gettext("Remove member")}
+                aria-label={gettext("Remove %{name}", name: Vaults.user_label(entry.user))}
+              >
+                <.icon name="hero-x-mark" class="w-4 h-4" />
+              </button>
+            </div>
+          </li>
+        </ul>
+      </.form_section>
     </div>
     """
   end

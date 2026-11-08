@@ -45,8 +45,12 @@ defmodule PhoenixKitKnowledgeBase do
   ## Two browsers, two people
 
   Every vault page subscribes to a PubSub topic for that vault, so a note added,
-  renamed, saved or deleted anywhere — including by `mix
-  phoenix_kit_knowledge_base.rescan` in a terminal — reaches every open session.
+  renamed, saved or deleted anywhere in the running application — the Rescan
+  button included — reaches every open session. `mix
+  phoenix_kit_knowledge_base.rescan` is the exception: it runs in its own OS
+  process, with no PubSub, so open pages see its changes on their next
+  navigation. Run `PhoenixKitKnowledgeBase.Rescan.run/1` on the live node (a
+  release's `rpc`) when they should refresh at once.
   A note being *read* is refreshed in place; a note being *edited* raises a
   banner instead, because the buffer may hold unsaved keystrokes.
 
@@ -161,15 +165,22 @@ defmodule PhoenixKitKnowledgeBase do
   def permission_metadata do
     %{
       key: module_key(),
-      label: "Knowledge Base",
+      label: gettext_noop("Knowledge Base"),
       icon: "hero-book-open",
-      description: "Linked markdown notes organised into vaults",
+      description: gettext_noop("Linked markdown notes organised into vaults"),
+      # Core's permission screens translate the labels through this backend;
+      # without it they look in core's own catalogue, find nothing, and show
+      # English. Sub-permissions inherit it.
+      gettext_backend: PhoenixKitKnowledgeBase.Gettext,
+      gettext_domain: "default",
       sub_permissions: [
         %{
           key: "manage_system_vaults",
-          label: "Manage system vaults",
+          label: gettext_noop("Manage organisation vaults"),
           description:
-            "Create, administer and delete organisation-wide vaults. Does not grant access to other users' personal vaults."
+            gettext_noop(
+              "Create, administer and delete organisation-wide vaults. Does not grant access to other users' personal vaults."
+            )
         }
       ]
     }

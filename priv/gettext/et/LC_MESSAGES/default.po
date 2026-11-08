@@ -11,93 +11,108 @@ msgstr ""
 "Language: et\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:316
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:761
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1211
 #, elixir-autogen, elixir-format
 msgid "%{count} note"
 msgid_plural "%{count} notes"
 msgstr[0] "%{count} märge"
 msgstr[1] "%{count} märget"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:800
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:807
 #, elixir-autogen, elixir-format
 msgid "A name cannot contain %{characters}."
 msgstr "Nimi ei tohi sisaldada märke %{characters}."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:803
+#: lib/phoenix_kit_knowledge_base/errors.ex:52
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:810
 #, elixir-autogen, elixir-format
 msgid "A name cannot end with a dot."
 msgstr "Nimi ei tohi lõppeda punktiga."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:802
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:809
 #, elixir-autogen, elixir-format
 msgid "A name cannot start with a dot."
 msgstr "Nimi ei tohi alata punktiga."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1020
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1021
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1028
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1029
 #, elixir-autogen, elixir-format
 msgid "Back to the list"
 msgstr "Tagasi loendisse"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:984
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1043
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:992
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1052
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Tühista"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:981
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:989
 #, elixir-autogen, elixir-format
 msgid "Create folder"
 msgstr "Loo kaust"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:884
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:891
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1574
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr "Sulge"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1118
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1127
 #, elixir-autogen, elixir-format
 msgid "Editing here needs Leaf 0.11 or later; this is the note as saved."
-msgstr "Siin muutmiseks on vaja Leaf 0.11 või uuemat; all on märge salvestatud kujul."
+msgstr "Siin muutmiseks on vaja Leaf 0.11 või uuemat versiooni; all on märge salvestatud kujul."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:855
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:862
 #, elixir-autogen, elixir-format
 msgid "Everyone here"
-msgstr "Kõigile"
+msgstr "Ühised"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:911
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1004
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:918
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1012
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2284
 #, elixir-autogen, elixir-format
 msgid "Folder"
 msgstr "Kaust"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:975
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:982
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:983
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1999
 #, elixir-autogen, elixir-format
 msgid "Folder name"
 msgstr "Kausta nimi"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:797
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:801
 #, elixir-autogen, elixir-format
 msgid "Give it a name."
 msgstr "Anna sellele nimi."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1104
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1113
 #, elixir-autogen, elixir-format
 msgid "Keep mine"
 msgstr "Jäta minu oma"
 
-#: lib/phoenix_kit_knowledge_base.ex:185
+#: lib/phoenix_kit_knowledge_base.ex:168
+#: lib/phoenix_kit_knowledge_base.ex:196
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:24
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:42
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:186
 #, elixir-autogen, elixir-format
 msgid "Knowledge Base"
 msgstr "Teadmusbaas"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1080
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1089
 #, elixir-autogen, elixir-format
 msgid "Move this note to the vault's trash?"
 msgstr "Kas teisaldada see märge hoidla prügikasti?"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1082
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1083
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1091
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1092
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1933
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1955
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2219
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2220
 #, elixir-autogen, elixir-format
 msgid "Move to trash"
 msgstr "Teisalda prügikasti"
@@ -105,7 +120,7 @@ msgstr "Teisalda prügikasti"
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:420
 #, elixir-autogen, elixir-format
 msgid "Moved “%{title}” to the vault's trash."
-msgstr "„%{title}” teisaldati hoidla prügikasti."
+msgstr "„%{title}“ teisaldati hoidla prügikasti."
 
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:780
 #, elixir-autogen, elixir-format
@@ -117,22 +132,23 @@ msgstr "Selle pealkirjaga märget siin pole"
 msgid "No note with this title here yet — click to create it"
 msgstr "Selle pealkirjaga märget siin veel pole — klõpsa, et see luua"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:961
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:968
 #, elixir-autogen, elixir-format
 msgid "No notes here yet."
 msgstr "Siin pole veel märkmeid."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:961
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:968
 #, elixir-autogen, elixir-format
 msgid "No notes here."
 msgstr "Siin pole märkmeid."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1198
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1187
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1484
 #, elixir-autogen, elixir-format
 msgid "Not saved"
 msgstr "Salvestamata"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:995
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1003
 #, elixir-autogen, elixir-format
 msgid "Note"
 msgstr "Märge"
@@ -143,18 +159,18 @@ msgstr "Märge"
 msgid "Note %{number}"
 msgstr "Märge %{number}"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1191
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1478
 #, elixir-autogen, elixir-format
 msgid "Notes"
 msgstr "Märkmed"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:855
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:862
 #, elixir-autogen, elixir-format
 msgid "Only me"
-msgstr "Ainult mina"
+msgstr "Ainult minu"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:862
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:863
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:869
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:870
 #, elixir-autogen, elixir-format
 msgid "Open the whole vault"
 msgstr "Ava kogu hoidla"
@@ -162,57 +178,56 @@ msgstr "Ava kogu hoidla"
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:789
 #, elixir-autogen, elixir-format
 msgid "Open “%{title}”"
-msgstr "Ava „%{title}”"
+msgstr "Ava „%{title}“"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1041
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1053
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1071
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1072
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1050
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1062
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1080
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1081
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1924
 #, elixir-autogen, elixir-format
 msgid "Rename"
 msgstr "Nimeta ümber"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1197
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1186
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1483
 #, elixir-autogen, elixir-format
 msgid "Saved"
 msgstr "Salvestatud"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1112
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1121
 #, elixir-autogen, elixir-format
 msgid "Show their version"
 msgstr "Näita nende versiooni"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1110
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1119
 #, elixir-autogen, elixir-format
 msgid "Someone else changed this note."
 msgstr "Keegi teine muutis seda märget."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:796
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:799
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:800
 #, elixir-autogen, elixir-format
 msgid "Something with that name is already here."
-msgstr "Selle nimega asi on siin juba olemas."
+msgstr "Selle nimega üksus on siin juba olemas."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1192
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1479
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2044
 #, elixir-autogen, elixir-format
 msgid "Tags"
 msgstr "Sildid"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1096
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1105
 #, elixir-autogen, elixir-format
 msgid "Take theirs"
 msgstr "Võta nende oma"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:808
-#, elixir-autogen, elixir-format
-msgid "That did not work (%{reason})."
-msgstr "See ei õnnestunud (%{reason})."
-
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:805
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:812
 #, elixir-autogen, elixir-format
 msgid "That name is reserved by the operating system."
 msgstr "Operatsioonisüsteem on selle nime reserveerinud."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:804
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:811
 #, elixir-autogen, elixir-format
 msgid "That name is too long."
 msgstr "See nimi on liiga pikk."
@@ -223,27 +238,28 @@ msgstr "See nimi on liiga pikk."
 msgid "That note was moved or deleted."
 msgstr "See märge teisaldati või kustutati."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:807
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:814
 #, elixir-autogen, elixir-format
 msgid "These notes could not be set up."
 msgstr "Neid märkmeid ei õnnestunud seadistada."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1092
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:804
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1101
 #, elixir-autogen, elixir-format
 msgid "This note was changed somewhere else, so this edit was not saved."
 msgstr "Seda märget muudeti mujal, seega seda muudatust ei salvestatud."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:819
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:826
 #, elixir-autogen, elixir-format
 msgid "This notes panel's path is not usable: %{reason}"
 msgstr "Selle märkmepaneeli tee ei sobi: %{reason}"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:841
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:848
 #, elixir-autogen, elixir-format
 msgid "Whose notes"
 msgstr "Kelle märkmed"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1133
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1142
 #, elixir-autogen, elixir-format
 msgid "Write here. Link with [[Note title]], tag with #tag."
 msgstr "Kirjuta siia. Lingi kujul [[Märkme pealkiri]], sildista kujul #silt."
@@ -254,12 +270,12 @@ msgid "You cannot change these notes."
 msgstr "Sa ei saa neid märkmeid muuta."
 
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:548
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:795
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:798
 #, elixir-autogen, elixir-format
 msgid "You cannot do that here."
 msgstr "Siin ei saa seda teha."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:891
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:898
 #, elixir-autogen, elixir-format
 msgid "You do not have access to these notes."
 msgstr "Sul pole nendele märkmetele ligipääsu."
@@ -269,74 +285,961 @@ msgstr "Sul pole nendele märkmetele ligipääsu."
 msgid "top level"
 msgstr "ülemine tase"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1178
+#: lib/phoenix_kit_knowledge_base/rescan.ex:163
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Apr"
-msgstr "apr"
+msgid "%{count} folder added"
+msgid_plural "%{count} folders added"
+msgstr[0] "lisatud %{count} kaust"
+msgstr[1] "lisatud %{count} kausta"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1182
+#: lib/phoenix_kit_knowledge_base/rescan.ex:165
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Aug"
-msgstr "aug"
+msgid "%{count} folder removed"
+msgid_plural "%{count} folders removed"
+msgstr[0] "eemaldatud %{count} kaust"
+msgstr[1] "eemaldatud %{count} kausta"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1186
+#: lib/phoenix_kit_knowledge_base/rescan.ex:159
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Dec"
-msgstr "dets"
+msgid "%{count} note added"
+msgid_plural "%{count} notes added"
+msgstr[0] "lisatud %{count} märge"
+msgstr[1] "lisatud %{count} märget"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1176
+#: lib/phoenix_kit_knowledge_base/rescan.ex:161
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Feb"
-msgstr "veebr"
+msgid "%{count} note moved"
+msgid_plural "%{count} notes moved"
+msgstr[0] "teisaldatud %{count} märge"
+msgstr[1] "teisaldatud %{count} märget"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1175
+#: lib/phoenix_kit_knowledge_base/rescan.ex:162
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Jan"
-msgstr "jaan"
+msgid "%{count} note removed"
+msgid_plural "%{count} notes removed"
+msgstr[0] "eemaldatud %{count} märge"
+msgstr[1] "eemaldatud %{count} märget"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1181
+#: lib/phoenix_kit_knowledge_base/rescan.ex:160
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Jul"
-msgstr "juuli"
+msgid "%{count} note updated"
+msgid_plural "%{count} notes updated"
+msgstr[0] "uuendatud %{count} märge"
+msgstr[1] "uuendatud %{count} märget"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1180
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1005
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Jun"
-msgstr "juuni"
+msgid "%{count} notes share this title — this link resolves to %{path}"
+msgstr "Selle pealkirjaga märkmeid on %{count} — see link viib märkmeni %{path}"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1177
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1812
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Mar"
-msgstr "märts"
+msgid "%{count} result"
+msgid_plural "%{count} results"
+msgstr[0] "%{count} tulemus"
+msgstr[1] "%{count} tulemust"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1179
+#: lib/phoenix_kit_knowledge_base/errors.ex:63
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "May"
-msgstr "mai"
+msgid "A folder cannot be moved inside itself."
+msgstr "Kausta ei saa teisaldada iseenda sisse."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1185
+#: lib/phoenix_kit_knowledge_base/errors.ex:47
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Nov"
-msgstr "nov"
+msgid "A name cannot be empty."
+msgstr "Nimi ei tohi olla tühi."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1184
+#: lib/phoenix_kit_knowledge_base/errors.ex:40
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Oct"
-msgstr "okt"
+msgid "A name cannot contain %{characters} — they break either the filesystem or [[link]] syntax. Not allowed: %{all}"
+msgstr "Nimi ei tohi sisaldada märke %{characters} — need rikuvad kas failisüsteemi või [[lingi]] süntaksi. Keelatud: %{all}"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1183
+#: lib/phoenix_kit_knowledge_base/errors.ex:50
 #, elixir-autogen, elixir-format
-msgctxt "month"
-msgid "Sep"
-msgstr "sept"
+msgid "A name cannot start with a dot — that would hide the file."
+msgstr "Nimi ei tohi alata punktiga — fail muutuks peidetuks."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:455
+#, elixir-autogen, elixir-format
+msgid "A note already exists at that path. Rename or move it, then restore again."
+msgstr "Selles asukohas on juba märge. Nimeta see ümber või teisalda ja taasta siis uuesti."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:59
+#, elixir-autogen, elixir-format
+msgid "A note with that name already exists in this folder."
+msgstr "Selle nimega märge on selles kaustas juba olemas."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:168
+#, elixir-autogen, elixir-format
+msgid "A personal vault. Nobody sees it unless they are listed here."
+msgstr "Isiklik hoidla. Seda näevad ainult siin loetletud inimesed."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2004
+#, elixir-autogen, elixir-format
+msgid "Add"
+msgstr "Lisa"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:201
+#, elixir-autogen, elixir-format
+msgid "Add %{name} as"
+msgstr "Lisa %{name} rollis"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:171
+#, elixir-autogen, elixir-format
+msgid "Add someone"
+msgstr "Lisa liige"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:165
+#, elixir-autogen, elixir-format
+msgid "An organisation vault. Anyone who can manage organisation vaults is already an owner — members listed here are additional people."
+msgstr "Organisatsiooni hoidla. Kõik, kes saavad organisatsiooni hoidlaid hallata, on juba selle omanikud — siin loetletud liikmed on neile lisaks."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1733
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1734
+#, elixir-autogen, elixir-format
+msgid "Clear search"
+msgstr "Tühjenda otsing"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:94
+#, elixir-autogen, elixir-format
+msgid "Could not add that person."
+msgstr "Seda inimest ei õnnestunud lisada."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:105
+#, elixir-autogen, elixir-format
+msgid "Could not change that role."
+msgstr "Rolli ei õnnestunud muuta."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:84
+#, elixir-autogen, elixir-format
+msgid "Could not create the vault: %{reason}"
+msgstr "Hoidlat ei õnnestunud luua: %{reason}"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:424
+#, elixir-autogen, elixir-format
+msgid "Could not delete that folder."
+msgstr "Kausta ei õnnestunud kustutada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:370
+#, elixir-autogen, elixir-format
+msgid "Could not delete that note."
+msgstr "Märget ei õnnestunud kustutada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:475
+#, elixir-autogen, elixir-format
+msgid "Could not delete that permanently."
+msgstr "Seda ei õnnestunud jäädavalt kustutada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:484
+#, elixir-autogen, elixir-format
+msgid "Could not empty the trash."
+msgstr "Prügikasti ei õnnestunud tühjendada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:651
+#, elixir-autogen, elixir-format
+msgid "Could not move that folder to the trash."
+msgstr "Kausta ei õnnestunud prügikasti teisaldada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:606
+#, elixir-autogen, elixir-format
+msgid "Could not move that folder."
+msgstr "Kausta ei õnnestunud teisaldada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:634
+#, elixir-autogen, elixir-format
+msgid "Could not move that note to the trash."
+msgstr "Märget ei õnnestunud prügikasti teisaldada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:390
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:590
+#, elixir-autogen, elixir-format
+msgid "Could not move that note."
+msgstr "Märget ei õnnestunud teisaldada."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:116
+#, elixir-autogen, elixir-format
+msgid "Could not remove that member."
+msgstr "Liiget ei õnnestunud eemaldada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:462
+#, elixir-autogen, elixir-format
+msgid "Could not restore that note."
+msgstr "Märget ei õnnestunud taastada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2162
+#, elixir-autogen, elixir-format
+msgid "Create note"
+msgstr "Loo märge"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:246
+#, elixir-autogen, elixir-format
+msgid "Create vault"
+msgstr "Loo hoidla"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2103
+#, elixir-autogen, elixir-format
+msgid "Create your first note."
+msgstr "Loo oma esimene märge."
+
+#: lib/phoenix_kit_knowledge_base.ex:181
+#, elixir-autogen, elixir-format
+msgid "Create, administer and delete organisation-wide vaults. Does not grant access to other users' personal vaults."
+msgstr "Organisatsiooni hoidlate loomine, haldamine ja kustutamine. Ei anna ligipääsu teiste kasutajate isiklikele hoidlatele."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2161
+#, elixir-autogen, elixir-format
+msgid "Creating…"
+msgstr "Loomine…"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1983
+#, elixir-autogen, elixir-format
+msgid "Delete folder"
+msgstr "Kustuta kaust"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1800
+#, elixir-autogen, elixir-format
+msgid "Delete permanently"
+msgstr "Kustuta jäädavalt"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1759
+#, elixir-autogen, elixir-format
+msgid "Deleted notes are moved to %{folder} inside the vault, not removed from disk."
+msgstr "Kustutatud märkmed teisaldatakse hoidla kausta %{folder}, kettalt neid ei eemaldata."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:472
+#, elixir-autogen, elixir-format
+msgid "Deleted permanently."
+msgstr "Jäädavalt kustutatud."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:237
+#, elixir-autogen, elixir-format
+msgid "Description"
+msgstr "Kirjeldus"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2240
+#, elixir-autogen, elixir-format
+msgid "Discard mine, reload"
+msgstr "Loobu minu omast, laadi uuesti"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:196
+#, elixir-autogen, elixir-format
+msgid "Each vault is its own space — [[wiki-links]] resolve inside a vault, never across."
+msgstr "Iga hoidla on omaette ruum — [[vikilingid]] toimivad hoidla sees, mitte hoidlate vahel."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1754
+#, elixir-autogen, elixir-format
+msgid "Empty trash"
+msgstr "Tühjenda prügikast"
+
+#: lib/phoenix_kit_knowledge_base/rescan.ex:152
+#, elixir-autogen, elixir-format
+msgid "Everything already up to date (%{count} note)."
+msgid_plural "Everything already up to date (%{count} notes)."
+msgstr[0] "Kõik on juba ajakohane (%{count} märge)."
+msgstr[1] "Kõik on juba ajakohane (%{count} märget)."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1590
+#, elixir-autogen, elixir-format
+msgid "Files"
+msgstr "Failid"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:179
+#, elixir-autogen, elixir-format
+msgid "Find a person"
+msgstr "Leia inimene"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1918
+#, elixir-autogen, elixir-format
+msgid "Folder actions"
+msgstr "Kausta toimingud"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1817
+#, elixir-autogen, elixir-format
+msgid "Full-text search matches whole words."
+msgstr "Täistekstiotsing leiab ainult terveid sõnu."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2132
+#, elixir-autogen, elixir-format
+msgid "Give it a title. That title is the file name, so it has to be unique inside its folder — two folders may each hold an “Ideas”, and a bare [[Ideas]] then resolves to the nearest one."
+msgstr "Anna sellele pealkiri. Pealkiri on faili nimi, seega peab see kaustas olema ainulaadne — kahes kaustas võib kummaski olla „Ideed“ ja lihtne [[Ideed]] viib siis lähimani."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1590
+#, elixir-autogen, elixir-format
+msgid "Hide files"
+msgstr "Peida failid"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2268
+#, elixir-autogen, elixir-format
+msgid "Keep editing"
+msgstr "Jätka muutmist"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2248
+#, elixir-autogen, elixir-format
+msgid "Keep mine, overwrite"
+msgstr "Jäta minu oma, kirjuta üle"
+
+#: lib/phoenix_kit_knowledge_base.ex:170
+#, elixir-autogen, elixir-format
+msgid "Linked markdown notes organised into vaults"
+msgstr "Hoidlatesse jaotatud omavahel lingitud markdown-märkmed"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:25
+#, elixir-autogen, elixir-format
+msgid "Linked markdown notes, organised into vaults."
+msgstr "Omavahel lingitud markdown-märkmed, hoidlatesse jaotatud."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2348
+#, elixir-autogen, elixir-format
+msgid "Linked mentions (%{count})"
+msgstr "Tagasilingid (%{count})"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2068
+#, elixir-autogen, elixir-format
+msgid "Linked to, but not written yet."
+msgstr "Neile viidatakse, kuid neid pole veel kirjutatud."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2369
+#, elixir-autogen, elixir-format
+msgid "Links from this note"
+msgstr "Lingid sellest märkmest"
+
+#: lib/phoenix_kit_knowledge_base.ex:179
+#, elixir-autogen, elixir-format
+msgid "Manage organisation vaults"
+msgstr "Organisatsiooni hoidlate haldamine"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:324
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:45
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:218
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1509
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1510
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1513
+#, elixir-autogen, elixir-format
+msgid "Members"
+msgstr "Liikmed"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1930
+#, elixir-autogen, elixir-format
+msgid "Move this folder to the trash, including every note and subfolder inside it?"
+msgstr "Kas teisaldada see kaust koos kõigi selles olevate märkmete ja alamkaustadega prügikasti?"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1953
+#, elixir-autogen, elixir-format
+msgid "Move this note to the trash?"
+msgstr "Kas teisaldada see märge prügikasti?"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2285
+#, elixir-autogen, elixir-format
+msgid "Move to folder"
+msgstr "Teisalda kausta"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1976
+#, elixir-autogen, elixir-format
+msgid "Move “%{name}” to the trash, including every note and subfolder inside it?"
+msgstr "Kas teisaldada „%{name}“ koos kõigi selles olevate märkmete ja alamkaustadega prügikasti?"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2213
+#, elixir-autogen, elixir-format
+msgid "Move “%{title}” to the trash? Links to it become unresolved until it is restored."
+msgstr "Kas teisaldada „%{title}“ prügikasti? Lingid sellele jäävad lahendamata, kuni see taastatakse."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1149
+#, elixir-autogen, elixir-format
+msgid "Moved “%{name}” and %{count} note in it to the trash."
+msgid_plural "Moved “%{name}” and %{count} notes in it to the trash."
+msgstr[0] "„%{name}“ ja selles olev %{count} märge teisaldati prügikasti."
+msgstr[1] "„%{name}“ ja selles olevad %{count} märget teisaldati prügikasti."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:260
+#, elixir-autogen, elixir-format
+msgid "My vaults"
+msgstr "Minu hoidlad"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:224
+#, elixir-autogen, elixir-format
+msgid "Name"
+msgstr "Nimi"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1998
+#, elixir-autogen, elixir-format
+msgid "New folder"
+msgstr "Uus kaust"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:208
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1545
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1546
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1549
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2108
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2126
+#, elixir-autogen, elixir-format
+msgid "New note"
+msgstr "Uus märge"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:185
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:203
+#, elixir-autogen, elixir-format
+msgid "New organisation vault"
+msgstr "Uus organisatsiooni hoidla"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:204
+#, elixir-autogen, elixir-format
+msgid "New personal vault"
+msgstr "Uus isiklik hoidla"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:176
+#, elixir-autogen, elixir-format
+msgid "New vault"
+msgstr "Uus hoidla"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:187
+#, elixir-autogen, elixir-format
+msgid "No matches. Search needs at least two characters, and people already on the list are hidden."
+msgstr "Vasteid pole. Otsinguks on vaja vähemalt kahte märki ja juba loendis olevaid inimesi ei näidata."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:237
+#, elixir-autogen, elixir-format
+msgid "No members yet."
+msgstr "Liikmeid veel pole."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1016
+#, elixir-autogen, elixir-format
+msgid "No note with this title yet"
+msgstr "Selle pealkirjaga märget veel pole"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1015
+#, elixir-autogen, elixir-format
+msgid "No note with this title yet — click to create it"
+msgstr "Selle pealkirjaga märget veel pole — klõpsa, et see luua"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:256
+#, elixir-autogen, elixir-format
+msgid "No organisation vaults yet."
+msgstr "Organisatsiooni hoidlaid veel pole."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:237
+#, elixir-autogen, elixir-format
+msgid "Nobody else has access."
+msgstr "Kellelgi teisel pole ligipääsu."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2384
+#, elixir-autogen, elixir-format
+msgid "Not written yet"
+msgstr "Veel kirjutamata"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1943
+#, elixir-autogen, elixir-format
+msgid "Note actions"
+msgstr "Märkme toimingud"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:365
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:631
+#, elixir-autogen, elixir-format
+msgid "Note moved to the trash."
+msgstr "Märge teisaldati prügikasti."
+
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1045
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2155
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2195
+#, elixir-autogen, elixir-format
+msgid "Note title"
+msgstr "Märkme pealkiri"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2019
+#, elixir-autogen, elixir-format
+msgid "Notes · #%{tag}"
+msgstr "Märkmed · #%{tag}"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2258
+#, elixir-autogen, elixir-format
+msgid "Nothing here has been replaced. Reload to see their version — anything you have not saved is lost. Keep editing, and your next save asks before overwriting theirs."
+msgstr "Siin pole midagi asendatud. Laadi uuesti, et näha nende versiooni — kõik salvestamata kaob. Kui jätkad, küsib järgmine salvestus enne nende versiooni ülekirjutamist."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2023
+#, elixir-autogen, elixir-format
+msgid "Nothing here yet."
+msgstr "Siin pole veel midagi."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2352
+#, elixir-autogen, elixir-format
+msgid "Nothing links here yet."
+msgstr "Siia ei viita veel miski."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1816
+#, elixir-autogen, elixir-format
+msgid "Nothing matched."
+msgstr "Midagi ei leitud."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:52
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:140
+#, elixir-autogen, elixir-format
+msgid "Only a vault owner can manage its members."
+msgstr "Liikmeid saab hallata ainult hoidla omanik."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1948
+#, elixir-autogen, elixir-format
+msgid "Open"
+msgstr "Ava"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:253
+#, elixir-autogen, elixir-format
+msgid "Organisation vaults"
+msgstr "Organisatsiooni hoidlad"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2245
+#, elixir-autogen, elixir-format
+msgid "Overwrite the other version with what's in your editor?"
+msgstr "Kas kirjutada teine versioon üle sellega, mis on sinu redaktoris?"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2289
+#, elixir-autogen, elixir-format
+msgid "Path inside the vault directory"
+msgstr "Tee hoidla kaustas"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1750
+#, elixir-autogen, elixir-format
+msgid "Permanently delete everything in the trash? This cannot be undone."
+msgstr "Kas kustutada kõik prügikastis olev jäädavalt? Seda ei saa tagasi võtta."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1794
+#, elixir-autogen, elixir-format
+msgid "Permanently delete “%{title}”? This cannot be undone."
+msgstr "Kas kustutada „%{title}“ jäädavalt? Seda ei saa tagasi võtta."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:269
+#, elixir-autogen, elixir-format
+msgid "Personal vaults other people have given you access to"
+msgstr "Teiste isiklikud hoidlad, millele sulle on ligipääs antud"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2101
+#, elixir-autogen, elixir-format
+msgid "Pick a note from the sidebar."
+msgstr "Vali külgpaanilt märge."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:261
+#, elixir-autogen, elixir-format
+msgid "Private to you unless you add members"
+msgstr "Nähtavad ainult sulle, kuni lisad liikmeid"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:214
+#, elixir-autogen, elixir-format
+msgid "Private to you until you add members — administrators do not get access automatically."
+msgstr "Nähtav ainult sulle, kuni lisad liikmeid — administraatorid ei saa automaatselt ligipääsu."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2300
+#, elixir-autogen, elixir-format
+msgid "Properties"
+msgstr "Omadused"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1535
+#, elixir-autogen, elixir-format
+msgid "Re-read the vault directory and pick up edits made outside this app"
+msgstr "Loe hoidla kaust uuesti ja võta üle väljaspool rakendust tehtud muudatused"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2265
+#, elixir-autogen, elixir-format
+msgid "Reload"
+msgstr "Laadi uuesti"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:273
+#, elixir-autogen, elixir-format
+msgid "Remove %{name}"
+msgstr "Eemalda %{name}"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:269
+#, elixir-autogen, elixir-format
+msgid "Remove %{name} from this vault?"
+msgstr "Kas eemaldada %{name} sellest hoidlast?"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:272
+#, elixir-autogen, elixir-format
+msgid "Remove member"
+msgstr "Eemalda liige"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:338
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:339
+#, elixir-autogen, elixir-format
+msgid "Remove vault"
+msgstr "Eemalda hoidla"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:332
+#, elixir-autogen, elixir-format
+msgid "Remove “%{name}” from the app? The files stay on disk — re-creating the vault with the same name and rescanning brings them back."
+msgstr "Kas eemaldada „%{name}“ rakendusest? Failid jäävad kettale — sama nimega hoidla uuesti loomine ja uuesti skannimine toob need tagasi."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:100
+#, elixir-autogen, elixir-format
+msgid "Removed “%{name}”. Its files are still on disk at %{directory}."
+msgstr "„%{name}“ eemaldati. Selle failid on endiselt kettal: %{directory}."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1536
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1539
+#, elixir-autogen, elixir-format
+msgid "Rescan"
+msgstr "Skanni uuesti"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1284
+#, elixir-autogen, elixir-format
+msgid "Rescan failed: %{reason}"
+msgstr "Uuesti skannimine ebaõnnestus: %{reason}"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1566
+#, elixir-autogen, elixir-format
+msgid "Rescan finished with problems"
+msgstr "Uuesti skannimine lõppes probleemidega"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1276
+#, elixir-autogen, elixir-format
+msgid "Rescan: %{summary}"
+msgstr "Uuesti skannimine: %{summary}"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1533
+#, elixir-autogen, elixir-format
+msgid "Rescanning…"
+msgstr "Skannimine…"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:225
+#, elixir-autogen, elixir-format
+msgid "Research"
+msgstr "Uurimistöö"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1787
+#, elixir-autogen, elixir-format
+msgid "Restore"
+msgstr "Taasta"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:445
+#, elixir-autogen, elixir-format
+msgid "Restored “%{title}”."
+msgstr "„%{title}“ taastati."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:260
+#, elixir-autogen, elixir-format
+msgid "Role of %{name}"
+msgstr "Kasutaja %{name} roll"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:180
+#, elixir-autogen, elixir-format
+msgid "Search by name, username or email…"
+msgstr "Otsi nime, kasutajanime või e-posti järgi…"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1725
+#, elixir-autogen, elixir-format
+msgid "Search this vault…"
+msgstr "Otsi sellest hoidlast…"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:254
+#, elixir-autogen, elixir-format
+msgid "Shared across the whole organisation"
+msgstr "Jagatud kogu organisatsiooniga"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:268
+#, elixir-autogen, elixir-format
+msgid "Shared with me"
+msgstr "Minuga jagatud"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2256
+#, elixir-autogen, elixir-format
+msgid "Someone else just saved this note"
+msgstr "Keegi teine salvestas just selle märkme"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2232
+#, elixir-autogen, elixir-format
+msgid "Something else edited %{path} — another browser, another person, or an editor on the server. Your changes are not being saved until you choose."
+msgstr "%{path} muudeti mujal — teises brauseris, teise inimese poolt või serveris redaktoriga. Sinu muudatusi ei salvestata enne, kui valid."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2136
+#, elixir-autogen, elixir-format
+msgid "Something links here. Create the note and every link waiting for this title resolves to it."
+msgstr "Siia viidatakse. Loo märge ja kõik seda pealkirja ootavad lingid hakkavad sellele viitama."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:95
+#, elixir-autogen, elixir-format
+msgid "Something went wrong. Try again, or rescan the vault."
+msgstr "Midagi läks valesti. Proovi uuesti või skanni hoidla uuesti."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:61
+#, elixir-autogen, elixir-format
+msgid "Something with that name is already there."
+msgstr "Selle nimega üksus on seal juba olemas."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:77
+#, elixir-autogen, elixir-format
+msgid "That file no longer exists on disk."
+msgstr "Seda faili pole enam kettal."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:69
+#, elixir-autogen, elixir-format
+msgid "That is not in the trash."
+msgstr "Seda pole prügikastis."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:56
+#, elixir-autogen, elixir-format
+msgid "That name is reserved by Windows and would break syncing the vault there."
+msgstr "See nimi on Windowsis reserveeritud ja rikuks seal hoidla sünkroonimise."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:53
+#, elixir-autogen, elixir-format
+msgid "That name is too long for a file name."
+msgstr "See nimi on failinimeks liiga pikk."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:68
+#, elixir-autogen, elixir-format
+msgid "That no longer exists."
+msgstr "Seda pole enam olemas."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1297
+#, elixir-autogen, elixir-format
+msgid "That note is no longer on disk."
+msgstr "Seda märget pole enam kettal."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:240
+#, elixir-autogen, elixir-format
+msgid "That note no longer exists."
+msgstr "Seda märget pole enam olemas."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#, elixir-autogen, elixir-format
+msgid "That path is not inside the vault."
+msgstr "See tee pole hoidla sees."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:61
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:172
+#, elixir-autogen, elixir-format
+msgid "That vault does not exist, or you do not have access to it."
+msgstr "Seda hoidlat pole olemas või sul pole sellele ligipääsu."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:79
+#, elixir-autogen, elixir-format
+msgid "The disk holding the vault is full."
+msgstr "Hoidlat sisaldav ketas on täis."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:84
+#, elixir-autogen, elixir-format
+msgid "The folder moved, but %{count} note in it could not be re-indexed. Rescan the vault to repair it."
+msgid_plural "The folder moved, but %{count} notes in it could not be re-indexed. Rescan the vault to repair it."
+msgstr[0] "Kaust teisaldati, kuid selles olevat %{count} märget ei õnnestunud uuesti indekseerida. Skanni hoidla uuesti, et see parandada."
+msgstr[1] "Kaust teisaldati, kuid selles olevaid %{count} märget ei õnnestunud uuesti indekseerida. Skanni hoidla uuesti, et see parandada."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:78
+#, elixir-autogen, elixir-format
+msgid "The server is not allowed to write to the vault's folder."
+msgstr "Serveril pole õigust hoidla kausta kirjutada."
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:229
+#, elixir-autogen, elixir-format
+msgid "The vault's creator — cannot be removed"
+msgstr "Hoidla looja — teda ei saa eemaldada"
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:80
+#, elixir-autogen, elixir-format
+msgid "The vault's folder is read-only."
+msgstr "Hoidla kaust on kirjutuskaitstud."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:66
+#, elixir-autogen, elixir-format
+msgid "The vault's own folder cannot be moved or deleted."
+msgstr "Hoidla enda kausta ei saa teisaldada ega kustutada."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1711
+#, elixir-autogen, elixir-format
+msgid "These notes are files on disk: %{directory}"
+msgstr "Need märkmed on failid kettal: %{directory}"
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:29
+#, elixir-autogen, elixir-format
+msgid "This note changed on disk since you opened it. Reload to see that version, or overwrite it with yours."
+msgstr "See märge on kettal muutunud pärast seda, kui selle avasid. Laadi uuesti, et näha seda versiooni, või kirjuta see oma versiooniga üle."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2230
+#, elixir-autogen, elixir-format
+msgid "This note changed since you opened it"
+msgstr "Märge on muutunud pärast selle avamist"
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:35
+#, elixir-autogen, elixir-format
+msgid "This note's file is gone from disk — moved or deleted somewhere else. Reload, or overwrite to write your version back."
+msgstr "Selle märkme fail on kettalt kadunud — see teisaldati või kustutati mujal. Laadi uuesti või kirjuta üle, et oma versioon tagasi panna."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:73
+#, elixir-autogen, elixir-format
+msgid "This text contains a character a note cannot hold (a NUL byte). Remove it and save again."
+msgstr "Tekstis on märk, mida märge ei saa sisaldada (NUL-bait). Eemalda see ja salvesta uuesti."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2100
+#, elixir-autogen, elixir-format
+msgid "This vault is empty."
+msgstr "See hoidla on tühi."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2154
+#, elixir-autogen, elixir-format
+msgid "Title"
+msgstr "Pealkiri"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1522
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1523
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1527
+#, elixir-autogen, elixir-format
+msgid "Trash"
+msgstr "Prügikast"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1743
+#, elixir-autogen, elixir-format
+msgid "Trash (%{count})"
+msgstr "Prügikast (%{count})"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:482
+#, elixir-autogen, elixir-format
+msgid "Trash emptied."
+msgstr "Prügikast tühjendati."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1766
+#, elixir-autogen, elixir-format
+msgid "Trash is empty."
+msgstr "Prügikast on tühi."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2312
+#, elixir-autogen, elixir-format
+msgid "Type [[ to link a note or # for a tag — ↑↓ to move, Enter to accept. Click a link to open it. Saves as you write."
+msgstr "Kirjuta [[, et lingida märkmele, või # sildi jaoks — ↑↓ liikumiseks, Enter kinnitamiseks. Klõpsa lingil, et see avada. Salvestub kirjutamise ajal."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:231
+#, elixir-autogen, elixir-format
+msgid "URL slug"
+msgstr "URL-i lühinimi"
+
+#: lib/phoenix_kit_knowledge_base/vaults.ex:367
+#: lib/phoenix_kit_knowledge_base/vaults.ex:376
+#, elixir-autogen, elixir-format
+msgid "Unknown user"
+msgstr "Tundmatu kasutaja"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2065
+#, elixir-autogen, elixir-format
+msgid "Unresolved links"
+msgstr "Lahendamata lingid"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2280
+#, elixir-autogen, elixir-format
+msgid "Vault root"
+msgstr "Hoidla juur"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:210
+#, elixir-autogen, elixir-format
+msgid "Visible to everyone who can administer organisation vaults, plus anyone you add as a member."
+msgstr "Nähtav kõigile, kes saavad organisatsiooni hoidlaid hallata, ning kõigile, kelle lisad liikmeks."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:239
+#, elixir-autogen, elixir-format
+msgid "What lives in this vault?"
+msgstr "Mis selles hoidlas on?"
+
+#: lib/phoenix_kit_knowledge_base/web/members_live.ex:46
+#, elixir-autogen, elixir-format
+msgid "Who can open this vault"
+msgstr "Kes saavad seda hoidlat avada"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2326
+#, elixir-autogen, elixir-format
+msgid "Write in markdown. Link with [[Note title]]."
+msgstr "Kirjuta markdownis. Lingi kujul [[Märkme pealkiri]]."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:43
+#, elixir-autogen, elixir-format
+msgid "You cannot create organisation vaults."
+msgstr "Sa ei saa organisatsiooni hoidlaid luua."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:73
+#, elixir-autogen, elixir-format
+msgid "You cannot create that kind of vault."
+msgstr "Sa ei saa sellist hoidlat luua."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:107
+#, elixir-autogen, elixir-format
+msgid "You cannot delete that vault."
+msgstr "Sa ei saa seda hoidlat kustutada."
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:25
+#, elixir-autogen, elixir-format
+msgid "You do not have permission to do that."
+msgstr "Sul pole selleks õigust."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:675
+#, elixir-autogen, elixir-format
+msgid "You do not have permission to rescan."
+msgstr "Sul pole õigust uuesti skannida."
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:263
+#, elixir-autogen, elixir-format
+msgid "You have no personal vaults yet."
+msgstr "Sul pole veel isiklikke hoidlaid."
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1157
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2167
+#, elixir-autogen, elixir-format
+msgid "You have read-only access to this vault."
+msgstr "Sul on sellele hoidlale ainult lugemisõigus."
+
+#: lib/phoenix_kit_knowledge_base/rescan.ex:378
+#, elixir-autogen, elixir-format
+msgid "could not be indexed: %{reason}"
+msgstr "ei õnnestunud indekseerida: %{reason}"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1776
+#, elixir-autogen, elixir-format
+msgid "deleted %{date}"
+msgstr "kustutatud %{date}"
+
+#: lib/phoenix_kit_knowledge_base/web/index_live.ex:232
+#, elixir-autogen, elixir-format
+msgid "derived from the name"
+msgstr "tuletatakse nimest"
+
+#: lib/phoenix_kit_knowledge_base/vaults.ex:384
+#, elixir-autogen, elixir-format
+msgid "editor"
+msgstr "toimetaja"
+
+#: lib/phoenix_kit_knowledge_base/rescan.ex:373
+#, elixir-autogen, elixir-format
+msgid "file disappeared during the scan"
+msgstr "fail kadus skannimise ajal"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1502
+#, elixir-autogen, elixir-format
+msgid "organisation"
+msgstr "organisatsioon"
+
+#: lib/phoenix_kit_knowledge_base/vaults.ex:383
+#, elixir-autogen, elixir-format
+msgid "owner"
+msgstr "omanik"
+
+#: lib/phoenix_kit_knowledge_base/rescan.ex:375
+#, elixir-autogen, elixir-format
+msgid "path escapes the vault directory"
+msgstr "tee väljub hoidla kaustast"
+
+#: lib/phoenix_kit_knowledge_base/rescan.ex:374
+#, elixir-autogen, elixir-format
+msgid "permission denied"
+msgstr "ligipääs keelatud"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1502
+#, elixir-autogen, elixir-format
+msgid "personal"
+msgstr "isiklik"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1194
+#, elixir-autogen, elixir-format
+msgid "vault root"
+msgstr "hoidla juur"
+
+#: lib/phoenix_kit_knowledge_base/vaults.ex:385
+#, elixir-autogen, elixir-format
+msgid "viewer"
+msgstr "lugeja"
+
+#: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2127
+#, elixir-autogen, elixir-format
+msgid "“%{title}” doesn't exist yet"
+msgstr "„%{title}“ pole veel olemas"

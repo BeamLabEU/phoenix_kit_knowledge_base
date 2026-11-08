@@ -4,30 +4,43 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
   split into the three groups that mean different things: organisation-wide
   vaults, your own, and personal vaults other people have shared with you.
 
-  PhoenixKit applies the admin layout automatically.
+  The module's landing page: core's admin bar carries the title and the "new
+  vault" buttons (`header_toolbar/1`), so the page draws no header of its own.
   """
   use PhoenixKitWeb, :live_view
+  # After `use PhoenixKitWeb`, which installs core's backend: this module's
+  # strings live in its own catalogue.
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
-  alias PhoenixKitKnowledgeBase.{Notes, Paths, Vaults}
+  alias PhoenixKitKnowledgeBase.{Errors, Notes, Paths, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Vault
 
+  # No queries: `mount/3` runs twice (the dead render and the socket), and the
+  # list is loaded once per navigation in `handle_params/3`.
   @impl true
   def mount(_params, _session, socket) do
     {:ok,
      socket
-     |> assign(:page_title, "Knowledge Base")
-     |> assign(:page_subtitle, "Linked markdown notes, organised into vaults")
+     |> assign(:page_title, gettext("Knowledge Base"))
+     |> assign(:page_subtitle, gettext("Linked markdown notes, organised into vaults."))
+     |> assign(:page_toolbar, {__MODULE__, :header_toolbar})
      |> assign(:creating, nil)
      |> assign(:form, to_form(Vaults.change(%Vault{})))
-     |> load_vaults()}
+     |> assign(:can_manage_system, false)
+     |> assign(:system_vaults, [])
+     |> assign(:my_vaults, [])
+     |> assign(:shared_vaults, [])}
   end
+
+  @impl true
+  def handle_params(_params, _uri, socket), do: {:noreply, load_vaults(socket)}
 
   @impl true
   def handle_event("new_vault", %{"kind" => kind}, socket) do
     kind = if kind == "system", do: :system, else: :user
 
     if kind == :system and not socket.assigns.can_manage_system do
-      {:noreply, put_flash(socket, :error, "You cannot create organisation vaults.")}
+      {:noreply, put_flash(socket, :error, gettext("You cannot create organisation vaults."))}
     else
       {:noreply,
        socket
@@ -57,13 +70,19 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
         {:noreply, push_navigate(socket, to: Paths.vault(vault.slug))}
 
       {:error, :unauthorized} ->
-        {:noreply, put_flash(socket, :error, "You cannot create that kind of vault.")}
+        {:noreply, put_flash(socket, :error, gettext("You cannot create that kind of vault."))}
 
       {:error, %Ecto.Changeset{} = changeset} ->
         {:noreply, assign(socket, :form, to_form(Map.put(changeset, :action, :insert)))}
 
-      other ->
-        {:noreply, put_flash(socket, :error, "Could not create the vault: #{inspect(other)}")}
+      # A filesystem refusal from making the vault's directory (`Vaults.create/3`).
+      {:error, reason} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gettext("Could not create the vault: %{reason}", reason: Errors.message(reason))
+         )}
     end
   end
 
@@ -78,11 +97,14 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
        socket
        |> put_flash(
          :info,
-         "Removed “#{vault.name}”. Its files are still on disk at #{vault.directory}."
+         gettext("Removed “%{name}”. Its files are still on disk at %{directory}.",
+           name: vault.name,
+           directory: vault.directory
+         )
        )
        |> load_vaults()}
     else
-      _ -> {:noreply, put_flash(socket, :error, "You cannot delete that vault.")}
+      _ -> {:noreply, put_flash(socket, :error, gettext("You cannot delete that vault."))}
     end
   end
 
@@ -139,100 +161,112 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
     end
   end
 
+  @doc false
+  # Core's admin bar renders this beside the title (`page_toolbar`), with this
+  # LiveView's assigns, so its clicks arrive here.
+  def header_toolbar(assigns) do
+    ~H"""
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        phx-click="new_vault"
+        phx-value-kind="user"
+        class="btn btn-primary btn-sm"
+      >
+        <.icon name="hero-plus" class="w-4 h-4" /> {gettext("New vault")}
+      </button>
+      <button
+        :if={@can_manage_system}
+        type="button"
+        phx-click="new_vault"
+        phx-value-kind="system"
+        class="btn btn-outline btn-sm"
+      >
+        <.icon name="hero-building-office-2" class="w-4 h-4" /> {gettext("New organisation vault")}
+      </button>
+    </div>
+    """
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
     <div class="mx-auto max-w-6xl px-4 py-6 space-y-8">
-      <div class="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-semibold">Knowledge Base</h1>
-          <p class="text-sm text-base-content/60">
-            Each vault is its own space — <code>[[wiki-links]]</code>
-            resolve inside a vault, never across.
-          </p>
-        </div>
+      <p class="text-sm text-base-content/60">
+        {gettext("Each vault is its own space — [[wiki-links]] resolve inside a vault, never across.")}
+      </p>
 
-        <div class="flex gap-2">
-          <button
-            type="button"
-            phx-click="new_vault"
-            phx-value-kind="user"
-            class="btn btn-primary btn-sm"
-          >
-            <.icon name="hero-plus" class="w-4 h-4" /> New vault
-          </button>
-          <button
-            :if={@can_manage_system}
-            type="button"
-            phx-click="new_vault"
-            phx-value-kind="system"
-            class="btn btn-outline btn-sm"
-          >
-            <.icon name="hero-building-office-2" class="w-4 h-4" /> New organisation vault
-          </button>
-        </div>
-      </div>
+      <.form_section
+        :if={@creating}
+        title={
+          if @creating == :system,
+            do: gettext("New organisation vault"),
+            else: gettext("New personal vault")
+        }
+      >
+        <:subtitle>
+          {if @creating == :system,
+            do:
+              gettext(
+                "Visible to everyone who can administer organisation vaults, plus anyone you add as a member."
+              ),
+            else:
+              gettext(
+                "Private to you until you add members — administrators do not get access automatically."
+              )}
+        </:subtitle>
 
-      <div :if={@creating} class="card bg-base-100 border border-base-300 shadow-sm">
-        <div class="card-body gap-4">
-          <h2 class="font-medium">
-            {if @creating == :system, do: "New organisation vault", else: "New personal vault"}
-          </h2>
-          <p class="text-sm text-base-content/60">
-            {if @creating == :system,
-              do:
-                "Visible to everyone who can administer organisation vaults, plus anyone you add as a member.",
-              else:
-                "Private to you until you add members — administrators do not get access automatically."}
-          </p>
-
-          <.form for={@form} id="new-vault-form" phx-change="validate_vault" phx-submit="save_vault">
-            <div class="grid gap-4 sm:grid-cols-2">
-              <.input field={@form[:name]} type="text" label="Name" placeholder="Research" required />
-              <.input
-                field={@form[:slug]}
-                type="text"
-                label="URL slug"
-                placeholder="derived from the name"
+        <.form for={@form} id="new-vault-form" phx-change="validate_vault" phx-submit="save_vault">
+          <div class="grid gap-4 sm:grid-cols-2">
+            <.input
+              field={@form[:name]}
+              type="text"
+              label={gettext("Name")}
+              placeholder={gettext("Research")}
+              required
+            />
+            <.input
+              field={@form[:slug]}
+              type="text"
+              label={gettext("URL slug")}
+              placeholder={gettext("derived from the name")}
+            />
+            <div class="sm:col-span-2">
+              <.textarea
+                field={@form[:description]}
+                label={gettext("Description")}
+                rows="2"
+                placeholder={gettext("What lives in this vault?")}
               />
-              <div class="sm:col-span-2">
-                <.textarea
-                  field={@form[:description]}
-                  label="Description"
-                  rows="2"
-                  placeholder="What lives in this vault?"
-                />
-              </div>
             </div>
+          </div>
 
-            <div class="flex justify-end gap-2 mt-4">
-              <button type="button" phx-click="cancel_new_vault" class="btn btn-ghost btn-sm">
-                Cancel
-              </button>
-              <button type="submit" class="btn btn-primary btn-sm">Create vault</button>
-            </div>
-          </.form>
-        </div>
-      </div>
+          <.form_actions
+            class="mt-4"
+            submit_label={gettext("Create vault")}
+            cancel_click="cancel_new_vault"
+          />
+        </.form>
+      </.form_section>
 
       <.vault_section
-        title="Organisation vaults"
-        subtitle="Shared across the whole organisation"
+        title={gettext("Organisation vaults")}
+        subtitle={gettext("Shared across the whole organisation")}
         entries={@system_vaults}
-        empty="No organisation vaults yet."
+        empty={gettext("No organisation vaults yet.")}
       />
 
       <.vault_section
-        title="My vaults"
-        subtitle="Private to you unless you add members"
+        title={gettext("My vaults")}
+        subtitle={gettext("Private to you unless you add members")}
         entries={@my_vaults}
-        empty="You have no personal vaults yet."
+        empty={gettext("You have no personal vaults yet.")}
       />
 
       <.vault_section
         :if={@shared_vaults != []}
-        title="Shared with me"
-        subtitle="Personal vaults other people have given you access to"
+        title={gettext("Shared with me")}
+        subtitle={gettext("Personal vaults other people have given you access to")}
         entries={@shared_vaults}
         empty=""
       />
@@ -253,7 +287,12 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
         <p class="text-xs text-base-content/50">{@subtitle}</p>
       </div>
 
-      <p :if={@entries == []} class="text-sm text-base-content/50 italic">{@empty}</p>
+      <.empty_state
+        :if={@entries == []}
+        title={@empty}
+        icon="hero-book-open"
+        class="py-6"
+      />
 
       <ul :if={@entries != []} class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <li :for={entry <- @entries} class="card bg-base-100 border border-base-300 shadow-sm">
@@ -263,7 +302,7 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
                 <.icon name={entry.vault.icon || "hero-book-open"} class="w-5 h-5 shrink-0" />
                 <span class="font-medium truncate hover:underline">{entry.vault.name}</span>
               </.link>
-              <span class="badge badge-ghost badge-sm shrink-0">{entry.role}</span>
+              <span class="badge badge-ghost badge-sm shrink-0">{Vaults.role_label(entry.role)}</span>
             </div>
 
             <p
@@ -274,24 +313,30 @@ defmodule PhoenixKitKnowledgeBase.Web.IndexLive do
             </p>
 
             <div class="flex items-center justify-between gap-2 text-xs text-base-content/50">
-              <span>{entry.note_count} {if entry.note_count == 1, do: "note", else: "notes"}</span>
+              <span>{ngettext("%{count} note", "%{count} notes", entry.note_count)}</span>
 
               <div class="flex items-center gap-1">
                 <.link
-                  :if={PhoenixKitKnowledgeBase.Vaults.can?(entry.role, :manage)}
+                  :if={Vaults.can?(entry.role, :manage)}
                   navigate={Paths.members(entry.vault.slug)}
                   class="btn btn-ghost btn-xs"
                 >
-                  Members
+                  {gettext("Members")}
                 </.link>
                 <button
-                  :if={PhoenixKitKnowledgeBase.Vaults.can?(entry.role, :manage)}
+                  :if={Vaults.can?(entry.role, :manage)}
                   type="button"
                   phx-click="delete_vault"
                   phx-value-slug={entry.vault.slug}
-                  data-confirm={"Remove “#{entry.vault.name}” from the app? The files stay on disk — re-creating the vault with the same name and rescanning brings them back."}
+                  data-confirm={
+                    gettext(
+                      "Remove “%{name}” from the app? The files stay on disk — re-creating the vault with the same name and rescanning brings them back.",
+                      name: entry.vault.name
+                    )
+                  }
                   class="btn btn-ghost btn-xs text-error"
-                  aria-label="Delete vault"
+                  title={gettext("Remove vault")}
+                  aria-label={gettext("Remove vault")}
                 >
                   <.icon name="hero-trash" class="w-4 h-4" />
                 </button>

@@ -34,6 +34,8 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
   # for vaults, and the imported query macro would shadow it.
   import Ecto.Query, except: [update: 2, update: 3]
 
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
+
   alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitKnowledgeBase.Schemas.{Vault, VaultMember}
@@ -362,7 +364,7 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
 
   @doc "A display label for a user record from `search_candidates/2` or `list_members/1`."
   @spec user_label(map() | nil) :: String.t()
-  def user_label(nil), do: "Unknown user"
+  def user_label(nil), do: gettext("Unknown user")
 
   def user_label(user) do
     name =
@@ -371,10 +373,17 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
       |> Enum.join(" ")
 
     case name do
-      "" -> Map.get(user, :username) || Map.get(user, :email) || "Unknown user"
+      "" -> Map.get(user, :username) || Map.get(user, :email) || gettext("Unknown user")
       name -> name
     end
   end
+
+  @doc "A role, for showing — the stored value stays English (`owner` / `editor` / `viewer`)."
+  @spec role_label(String.t() | nil) :: String.t()
+  def role_label("owner"), do: gettext("owner")
+  def role_label("editor"), do: gettext("editor")
+  def role_label("viewer"), do: gettext("viewer")
+  def role_label(other), do: to_string(other)
 
   # ── internals ─────────────────────────────────────────────────────────────
 
