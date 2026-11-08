@@ -36,11 +36,33 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   # ── Folders ───────────────────────────────────────────────────────────────
 
-  @doc "Every indexed folder in a vault, ordered by path so a tree can be built in one pass."
-  @spec list_folders(String.t()) :: [Folder.t()]
-  def list_folders(vault_uuid) do
-    repo().all(
-      from(f in Folder, where: f.vault_uuid == ^vault_uuid, order_by: [asc: f.relative_path])
+  @doc """
+  Every indexed folder in a vault, ordered by path so a tree can be built in one pass.
+
+  Options:
+
+    * `:parent` — only the folders directly inside this one (`""`: the vault
+      root's own). For a listing of one folder, which would otherwise read the
+      whole vault's tree to show a level of it.
+  """
+  @spec list_folders(String.t(), keyword()) :: [Folder.t()]
+  def list_folders(vault_uuid, opts \\ []) do
+    from(f in Folder, where: f.vault_uuid == ^vault_uuid, order_by: [asc: f.relative_path])
+    |> filter_children_of(Keyword.get(opts, :parent, :any))
+    |> repo().all()
+  end
+
+  defp filter_children_of(query, :any), do: query
+
+  defp filter_children_of(query, ""),
+    do: from(f in query, where: not like(f.relative_path, "%/%"))
+
+  defp filter_children_of(query, parent) do
+    prefix = escape_like(parent) <> "/"
+
+    from(f in query,
+      where:
+        like(f.relative_path, ^(prefix <> "%")) and not like(f.relative_path, ^(prefix <> "%/%"))
     )
   end
 
@@ -354,6 +376,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     * `:tag` — only notes carrying this tag
     * `:order` — `:title` (default) or `:updated`
     * `:limit`
+    * `:content` — `false` leaves each note's body unloaded (it reads `""`).
+      For listings and link resolution, which need titles, paths, tags and
+      dates and would otherwise read every note's whole text — a notes panel
+      does that on every poll.
   """
   @spec list_notes(String.t(), keyword()) :: [Note.t()]
   def list_notes(vault_uuid, opts \\ []) do
@@ -363,8 +389,14 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     |> filter_by_tag(Keyword.get(opts, :tag))
     |> order_notes(Keyword.get(opts, :order, :title))
     |> maybe_limit(Keyword.get(opts, :limit))
+    |> maybe_without_content(Keyword.get(opts, :content, true))
     |> repo().all()
   end
+
+  defp maybe_without_content(query, false),
+    do: from(n in query, select: struct(n, ^(Note.__schema__(:fields) -- [:content])))
+
+  defp maybe_without_content(query, _), do: query
 
   defp filter_by_folder(query, :any), do: query
   defp filter_by_folder(query, path), do: from(n in query, where: n.folder_path == ^path)

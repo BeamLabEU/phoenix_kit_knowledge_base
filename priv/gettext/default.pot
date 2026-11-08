@@ -11,77 +11,77 @@
 msgid ""
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:730
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:761
 #, elixir-autogen, elixir-format
 msgid "%{count} note"
 msgid_plural "%{count} notes"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:769
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:800
 #, elixir-autogen, elixir-format
 msgid "A name cannot contain %{characters}."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:772
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:803
 #, elixir-autogen, elixir-format
 msgid "A name cannot end with a dot."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:771
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:802
 #, elixir-autogen, elixir-format
 msgid "A name cannot start with a dot."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:989
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:990
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1020
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1021
 #, elixir-autogen, elixir-format
 msgid "Back to the list"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:953
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1012
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:984
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1043
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:950
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:981
 #, elixir-autogen, elixir-format
 msgid "Create folder"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:853
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:884
 #, elixir-autogen, elixir-format
 msgid "Dismiss"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1087
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1118
 #, elixir-autogen, elixir-format
 msgid "Editing here needs Leaf 0.11 or later; this is the note as saved."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:824
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:855
 #, elixir-autogen, elixir-format
 msgid "Everyone here"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:880
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:973
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:911
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1004
 #, elixir-autogen, elixir-format
 msgid "Folder"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:944
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:975
 #, elixir-autogen, elixir-format
 msgid "Folder name"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:766
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:797
 #, elixir-autogen, elixir-format
 msgid "Give it a name."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1073
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1104
 #, elixir-autogen, elixir-format
 msgid "Keep mine"
 msgstr ""
@@ -91,251 +91,251 @@ msgstr ""
 msgid "Knowledge Base"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1049
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1080
 #, elixir-autogen, elixir-format
 msgid "Move this note to the vault's trash?"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1051
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1052
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1082
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1083
 #, elixir-autogen, elixir-format
 msgid "Move to trash"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:395
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:420
 #, elixir-autogen, elixir-format
 msgid "Moved “%{title}” to the vault's trash."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:749
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:780
 #, elixir-autogen, elixir-format
 msgid "No note with this title here"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:748
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:779
 #, elixir-autogen, elixir-format
 msgid "No note with this title here yet — click to create it"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:930
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:961
 #, elixir-autogen, elixir-format
 msgid "No notes here yet."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:930
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:961
 #, elixir-autogen, elixir-format
 msgid "No notes here."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1167
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1198
 #, elixir-autogen, elixir-format
 msgid "Not saved"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:964
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:995
 #, elixir-autogen, elixir-format
 msgid "Note"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:497
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:503
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:524
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:532
 #, elixir-autogen, elixir-format
 msgid "Note %{number}"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1160
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1191
 #, elixir-autogen, elixir-format
 msgid "Notes"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:824
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:855
 #, elixir-autogen, elixir-format
 msgid "Only me"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:831
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:832
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:862
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:863
 #, elixir-autogen, elixir-format
 msgid "Open the whole vault"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:758
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:789
 #, elixir-autogen, elixir-format
 msgid "Open “%{title}”"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1010
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1022
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1040
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1041
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1053
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1071
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1072
 #, elixir-autogen, elixir-format
 msgid "Rename"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1166
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1197
 #, elixir-autogen, elixir-format
 msgid "Saved"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1081
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1112
 #, elixir-autogen, elixir-format
 msgid "Show their version"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1079
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1110
 #, elixir-autogen, elixir-format
 msgid "Someone else changed this note."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:765
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:796
 #, elixir-autogen, elixir-format
 msgid "Something with that name is already here."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1161
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1192
 #, elixir-autogen, elixir-format
 msgid "Tags"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1065
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1096
 #, elixir-autogen, elixir-format
 msgid "Take theirs"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:777
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:808
 #, elixir-autogen, elixir-format
 msgid "That did not work (%{reason})."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:774
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:805
 #, elixir-autogen, elixir-format
 msgid "That name is reserved by the operating system."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:773
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:804
 #, elixir-autogen, elixir-format
 msgid "That name is too long."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:270
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:408
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:282
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:435
 #, elixir-autogen, elixir-format
 msgid "That note was moved or deleted."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:776
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:807
 #, elixir-autogen, elixir-format
 msgid "These notes could not be set up."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1061
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1092
 #, elixir-autogen, elixir-format
 msgid "This note was changed somewhere else, so this edit was not saved."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:788
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:819
 #, elixir-autogen, elixir-format
 msgid "This notes panel's path is not usable: %{reason}"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:810
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:841
 #, elixir-autogen, elixir-format
 msgid "Whose notes"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1102
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1133
 #, elixir-autogen, elixir-format
 msgid "Write here. Link with [[Note title]], tag with #tag."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:575
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:604
 #, elixir-autogen, elixir-format
 msgid "You cannot change these notes."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:519
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:764
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:548
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:795
 #, elixir-autogen, elixir-format
 msgid "You cannot do that here."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:860
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:891
 #, elixir-autogen, elixir-format
 msgid "You do not have access to these notes."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:710
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:741
 #, elixir-autogen, elixir-format
 msgid "top level"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1147
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1178
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Apr"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1151
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1182
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Aug"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1155
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1186
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Dec"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1145
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1176
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Feb"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1144
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1175
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Jan"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1150
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1181
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Jul"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1149
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1180
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Jun"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1146
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1177
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Mar"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1148
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1179
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "May"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1154
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1185
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Nov"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1153
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1184
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Oct"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1152
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1183
 #, elixir-autogen, elixir-format
 msgctxt "month"
 msgid "Sep"

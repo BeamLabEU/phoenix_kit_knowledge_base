@@ -46,6 +46,12 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     render(lv)
   end
 
+  # One beat of the poll, without waiting for it (the tests mount with `poll: 0`).
+  defp tick(lv) do
+    Phoenix.LiveView.send_update(lv.pid, NotesPanel, id: "panel", tick: true)
+    render(lv)
+  end
+
   defp place!(path, visibility) do
     {:ok, place} = Places.parse(path, visibility)
     place
@@ -146,6 +152,25 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       [vault] = vaults()
       titles = vault.uuid |> Notes.list_notes(folder_path: "Clients/Acme") |> Enum.map(& &1.title)
       assert Enum.sort(titles) == ["Note 1", "Note 3", "Note 4", "Note 5"]
+    end
+
+    # `\d` under the `u` flag is any Unicode decimal digit, and
+    # `String.to_integer/1` takes ASCII only: "Note ٣" (a valid file name) used
+    # to raise inside the host's process on the next click.
+    test "a number in another script is not a number here, and not a crash", %{
+      conn: conn,
+      me: me
+    } do
+      note!(me, "Note ٣")
+      note!(me, "Note ３")
+
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "new_note")
+      assert Process.alive?(lv.pid)
+
+      [vault] = vaults()
+      titles = vault.uuid |> Notes.list_notes() |> Enum.map(& &1.title) |> Enum.sort()
+      assert titles == ["Note 1", "Note ٣", "Note ３"]
     end
 
     test "a new note can be given a real name straight away", %{conn: conn, me: me} do
@@ -460,6 +485,102 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert html =~ "needs Leaf 0.11"
       assert html =~ "before"
       refute html =~ NotesPanel.editor_id("panel", note)
+    end
+
+    test "a note moved out of the folder is let go of, not followed", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      id = NotesPanel.editor_id("panel", note)
+
+      # Moved elsewhere in the vault, on the admin page, while it is open here.
+      {:ok, _} = Notes.create_folder(vault, "Clients", "Globex")
+      {:ok, moved} = Notes.move_note(vault, note, "Clients/Globex")
+      {:ok, _} = Notes.update_content(vault, moved, "Globex's now")
+
+      # The next save fails (the file is gone from here), which offers "Take
+      # theirs". Taking it must not open the note where it went.
+      leaf(lv, {:leaf_changed, %{editor_id: id, markdown: "mine", html: "", dirty: true}})
+      html = fire(lv, "reload_note")
+      refute html =~ "Globex&#39;s now"
+      refute html =~ id
+      assert html =~ "moved or deleted"
+
+      # And the poll lets go of it too.
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      refute tick(lv) =~ id
+    end
+
+    test "the poll lets go of an open note the panel's fence no longer holds", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      id = NotesPanel.editor_id("panel", note)
+
+      {:ok, _} = Notes.create_folder(vault, "Clients", "Globex")
+      {:ok, _} = Notes.move_note(vault, note, "Clients/Globex")
+
+      html = tick(lv)
+      refute html =~ id
+      assert html =~ "moved or deleted"
+    end
+
+    test "a note renamed elsewhere stays open and saves under its new name", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      id = NotesPanel.editor_id("panel", note)
+
+      {:ok, renamed} = Notes.rename_note(vault, note, "Renamed elsewhere")
+      assert tick(lv) =~ "Renamed elsewhere"
+
+      html = leaf(lv, {:leaf_changed, %{editor_id: id, markdown: "after", html: "", dirty: true}})
+      refute html =~ "changed somewhere else"
+      assert file(vault, renamed) == "after"
+    end
+
+    test "the vault deleted under an open note closes the note, not the page", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      id = NotesPanel.editor_id("panel", note)
+
+      {:ok, _} = PhoenixKitKnowledgeBase.Vaults.delete(vault)
+      refute tick(lv) =~ id
+
+      # A keystroke Leaf had already debounced arrives after.
+      leaf(lv, {:leaf_changed, %{editor_id: id, markdown: "late", html: "", dirty: true}})
+      assert Process.alive?(lv.pid)
+    end
+
+    test "losing view access stops the editor's messages opening anything", %{
+      conn: conn,
+      me: me,
+      note: note
+    } do
+      {_vault, plan} = note!(me, "Acme plan", @path, :shared, "the plan")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      Application.put_env(:phoenix_kit_knowledge_base, :authorize, {Hooks, :nobody})
+      html = leaf(lv, {:leaf_link_clicked, %{editor_id: "x", target: "Acme plan"}})
+      refute html =~ NotesPanel.editor_id("panel", plan)
     end
 
     test "the host page never receives a message meant for the panel", %{

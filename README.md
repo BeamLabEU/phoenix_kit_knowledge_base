@@ -229,7 +229,8 @@ one `CRM` vault with a folder per client.
   a link to the whole vault on the admin pages.
 - **Needs Leaf 0.11** (its `notify` option) to edit in place. With an older Leaf
   the panel shows notes read-only rather than send the editor's messages to
-  your page.
+  your page. Which Leaf you get is capped by `phoenix_kit`'s own requirement,
+  so this also needs a core that admits 0.11 — 3.4.0 stops at 0.10.
 
 The panel polls (`poll`, default 5 s) because a component cannot subscribe to
 anything, and shows every message inline. See `PhoenixKitKnowledgeBase.Web.NotesPanel`.

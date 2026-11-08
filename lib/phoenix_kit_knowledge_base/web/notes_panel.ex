@@ -103,8 +103,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   # ── Lifecycle ─────────────────────────────────────────────────────────────
 
+  # The editor's messages are events like any other, and are asked about like
+  # them: one arriving after access was withdrawn opens, offers and resolves
+  # nothing. (`:leaf_changed` goes on to ask for `:edit` itself.)
   @impl true
-  def update(%{leaf: message}, socket), do: {:ok, handle_leaf(message, socket)}
+  def update(%{leaf: message}, socket) do
+    %{place: place, user: user} = socket.assigns
+
+    if place && Places.authorize(:view, user, place),
+      do: {:ok, handle_leaf(message, socket)},
+      else: {:ok, socket}
+  end
 
   # One chain of timers per panel: a tick clears the flag and re-arms, and a
   # host re-render in between finds it set and does not start a second chain.
@@ -172,6 +181,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:folders, [])
     |> assign(:notes, [])
     |> assign(:admin_href, nil)
+    |> assign(:admin_href_for, nil)
     |> assign(:timer_armed?, false)
   end
 
@@ -211,6 +221,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:can_view?, can_view?)
     |> assign(:can_edit?, can_edit?)
     |> assign(:vault, vault)
+    |> release_note_without_vault()
     |> load_listing()
     |> assign_admin_href()
   end
@@ -218,36 +229,34 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp load_listing(%{assigns: %{vault: nil}} = socket),
     do: socket |> assign(:folders, []) |> assign(:notes, [])
 
+  # Runs on every poll: one level of folders, and notes without their bodies —
+  # the listing shows names and dates, and the open note is read on its own.
   defp load_listing(socket) do
     %{vault: vault, current_folder: current} = socket.assigns
 
-    folders =
-      vault.uuid
-      |> Notes.list_folders()
-      |> Enum.filter(&(parent_of(&1.relative_path) == current))
-
     socket
-    |> assign(:folders, folders)
-    |> assign(:notes, Notes.list_notes(vault.uuid, folder_path: current))
-  end
-
-  defp parent_of(relative_path) do
-    case Path.dirname(relative_path) do
-      "." -> ""
-      parent -> parent
-    end
+    |> assign(:folders, Notes.list_folders(vault.uuid, parent: current))
+    |> assign(:notes, Notes.list_notes(vault.uuid, folder_path: current, content: false))
   end
 
   # Only for someone who could open the vault on the admin pages anyway: the
   # `knowledge_base` permission and a role on this vault. Everyone else is never
   # shown a link to a page that would turn them away.
   #
+  # Worked out once per vault, not on every poll: `Scope.for_user/1` reads the
+  # person's roles and permissions, and a panel polls every few seconds. A link
+  # that outlives a withdrawn role is harmless — the admin page asks again.
+  #
   # Dialyzer reads the `MapSet` inside the `Scope` that `Scope.for_user/1` builds
   # as breaking its opacity when the struct is handed back to core. Core's own
   # types, not a fault here — a panel is given a user, not a scope, so it has to
   # build one.
   @dialyzer {:nowarn_function, assign_admin_href: 1}
-  defp assign_admin_href(%{assigns: %{vault: nil}} = socket), do: assign(socket, :admin_href, nil)
+  defp assign_admin_href(%{assigns: %{vault: nil}} = socket),
+    do: socket |> assign(:admin_href, nil) |> assign(:admin_href_for, nil)
+
+  defp assign_admin_href(%{assigns: %{vault: %{uuid: uuid}, admin_href_for: uuid}} = socket),
+    do: socket
 
   defp assign_admin_href(%{assigns: %{vault: vault, user: user}} = socket) do
     scope = Scope.for_user(user)
@@ -256,28 +265,44 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       if Scope.has_module_access?(scope, "knowledge_base") and Vaults.role_for(vault, scope),
         do: Paths.vault(vault.slug)
 
-    assign(socket, :admin_href, href)
+    socket |> assign(:admin_href, href) |> assign(:admin_href_for, vault.uuid)
   end
 
   # The open note's file may have been changed by someone else. Announced,
   # never applied: the editor may hold keystrokes not yet saved, and replacing
   # them behind the writer's back loses them. Reloading is theirs to ask for.
+  #
+  # Re-read through the fence: a note moved out of the panel's folder on the
+  # admin page is somebody else's now, and is let go of like a deleted one.
   defp check_open_note(%{assigns: %{note: nil}} = socket), do: socket
 
   defp check_open_note(%{assigns: %{note: note, vault: vault}} = socket) when not is_nil(vault) do
-    case Notes.get_note(vault.uuid, note.uuid) do
+    case fenced_note(socket, note.uuid) do
       nil ->
         socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
       %Note{content_hash: hash} when hash != note.content_hash ->
         assign(socket, :remote_change, true)
 
-      _ ->
-        socket
+      # Same bytes, maybe a new name or folder (renamed elsewhere, still inside
+      # the fence). Taken silently — the buffer is unaffected, and `save/3`
+      # writes against `@note.relative_path`, which would otherwise be a path
+      # that no longer exists.
+      %Note{} = fresh ->
+        assign(socket, :note, fresh)
     end
   end
 
   defp check_open_note(socket), do: socket
+
+  # A note stays open only while its vault is in hand. `load/1` drops the vault
+  # when it is deleted or this person may no longer see it; an open note left
+  # behind would send a late keystroke from the editor to `save/3` with nothing
+  # to write into — a clause error in the host's process.
+  defp release_note_without_vault(%{assigns: %{vault: nil, note: %Note{}}} = socket),
+    do: close_note(socket)
+
+  defp release_note_without_vault(socket), do: socket
 
   defp arm_timer(%{assigns: %{poll: ms}} = socket) when is_integer(ms) and ms > 0 do
     if connected?(socket) and socket.assigns[:timer_armed?] != true do
@@ -400,10 +425,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end)
   end
 
-  # The file changed underneath. Either take theirs…
+  # The file changed underneath. Either take theirs… — through the fence: the
+  # usual reason a save fails with `:missing_file` is that the note was moved,
+  # and where it went may be outside this panel's folder.
   def handle_event("reload_note", _params, socket) do
-    with_open_note(socket, :view, fn socket, vault, note ->
-      case Notes.get_note(vault.uuid, note.uuid) do
+    with_open_note(socket, :view, fn socket, _vault, note ->
+      case fenced_note(socket, note.uuid) do
         nil ->
           socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
@@ -467,7 +494,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
     first =
       vault.uuid
-      |> Notes.list_notes(folder_path: folder)
+      |> Notes.list_notes(folder_path: folder, content: false)
       |> Enum.flat_map(fn note ->
         case Regex.run(numbered, note.title) do
           [_, n] -> [String.to_integer(n)]
@@ -497,7 +524,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp numbered_title(n), do: gettext("Note %{number}", number: n)
 
   # The translated "Note %{number}" with the number as a capture, so the next
-  # number is found whatever the language is.
+  # number is found whatever the language is. `[0-9]`, not `\d`: under the `u`
+  # flag `\d` is any Unicode digit ("Note ٣" is a valid title), and
+  # `String.to_integer/1` raises on those — in the host's process.
   defp numbered_title_regex do
     [before, after_] =
       case String.split(gettext("Note %{number}", number: "\0"), "\0", parts: 2) do
@@ -505,7 +534,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         _ -> ["Note ", ""]
       end
 
-    Regex.compile!("^" <> Regex.escape(before) <> "(\\d+)" <> Regex.escape(after_) <> "$", "u")
+    Regex.compile!("^" <> Regex.escape(before) <> "([0-9]+)" <> Regex.escape(after_) <> "$", "u")
   end
 
   # Access is asked again on every event: it is the host's, and may have
@@ -682,8 +711,10 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp fenced_notes(%{assigns: %{vault: nil}}), do: []
 
+  # Titles, paths and tags of the whole fenced subtree, for every suggestion
+  # popup and every link check the editor makes — never the bodies.
   defp fenced_notes(%{assigns: %{vault: vault, place: place}}) do
-    Notes.list_notes(vault.uuid, under: place.folder, order: :updated)
+    Notes.list_notes(vault.uuid, under: place.folder, order: :updated, content: false)
   end
 
   defp fenced_resolver(socket), do: socket |> fenced_notes() |> Links.resolver_from()

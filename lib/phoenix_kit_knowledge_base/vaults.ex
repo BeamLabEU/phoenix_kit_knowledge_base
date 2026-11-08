@@ -201,8 +201,15 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
   here rather than only in the UI, so the check can't be skipped by a crafted
   form submission.
   """
+  # `{:error, term()}`: the vault's directory is made before the row, and a
+  # filesystem refusal (`Storage.ensure_vault/1`) comes back as it is. The
+  # narrower spec this had told dialyzer that callers' fallback clauses were
+  # dead, and deleting one would have turned a disk error into a crash.
   @spec create(map(), Scope.t() | nil, :user | :system) ::
-          {:ok, Vault.t()} | {:error, Ecto.Changeset.t()} | {:error, :unauthorized}
+          {:ok, Vault.t()}
+          | {:error, Ecto.Changeset.t()}
+          | {:error, :unauthorized}
+          | {:error, term()}
   def create(attrs, scope, scope_kind \\ :user)
 
   def create(attrs, scope, :system) do

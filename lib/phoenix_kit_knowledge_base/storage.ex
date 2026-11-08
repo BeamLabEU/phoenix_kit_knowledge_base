@@ -382,8 +382,7 @@ defmodule PhoenixKitKnowledgeBase.Storage do
       File.rename(source, target)
     else
       true -> {:error, :target_exists}
-      {:error, reason} -> {:error, reason}
-      error -> error
+      {:error, _reason} = error -> error
     end
   end
 
@@ -749,8 +748,7 @@ defmodule PhoenixKitKnowledgeBase.Storage do
       File.rename(source, target)
     else
       true -> {:error, :target_exists}
-      {:error, reason} -> {:error, reason}
-      error -> error
+      {:error, _reason} = error -> error
     end
   end
 
