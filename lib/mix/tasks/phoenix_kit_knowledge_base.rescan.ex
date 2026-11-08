@@ -18,6 +18,11 @@ defmodule Mix.Tasks.PhoenixKitKnowledgeBase.Rescan do
 
   Exits non-zero if any vault reported an error, so a cron job or CI step fails
   loudly rather than logging into the void.
+
+  This is a separate OS process from the running app, with no PubSub: browsers
+  open on a vault pick its changes up on their next navigation, not at once.
+  To refresh them immediately, call `PhoenixKitKnowledgeBase.Rescan.run/1` on
+  the live node instead (a release's `bin/<app> rpc`).
   """
 
   use Mix.Task

@@ -27,13 +27,15 @@ defmodule PhoenixKitKnowledgeBase.Storage do
     1. `safe_relative/1` rejects the input outright — absolute paths, any `.` or
        `..` segment, and NUL bytes never become a path at all.
     2. `resolve/2` expands the joined result and re-checks that it is still
-       under the base. That catches anything the first pass didn't anticipate,
-       including a base that itself contains symlinks.
+       under the base. That catches anything the first pass didn't anticipate.
+       It is a check on the *string*: `Path.expand/1` is lexical and follows
+       no symlinks, which is why the walk refuses to follow them instead.
 
   Symlinks *inside* a vault are skipped by the walk rather than followed, so a
-  planted link can't pull `/etc/passwd` into someone's search index. The vault
-  directory itself may be a symlink — that is how you point a vault at an
-  Obsidian vault that already exists somewhere else.
+  planted link can't pull `/etc/passwd` into someone's search index — and since
+  only walked paths are ever indexed, nothing in the app can name a path
+  through one. The vault directory itself may be a symlink — that is how you
+  point a vault at an Obsidian vault that already exists somewhere else.
 
   ## Atomic writes
 
@@ -341,13 +343,21 @@ defmodule PhoenixKitKnowledgeBase.Storage do
   def delete_folder(directory, folder_path) do
     with {:ok, path} <- vault_child(directory, folder_path),
          # Refuse to rm -rf the vault root because a caller passed "" or ".".
-         true <- Path.expand(path) != Path.expand(vault_path(directory)),
-         {:ok, _} <- File.rm_rf(path) do
-      :ok
+         true <- Path.expand(path) != Path.expand(vault_path(directory)) do
+      rm_rf(path)
     else
       false -> {:error, :refuse_vault_root}
-      {:error, reason} -> {:error, reason}
-      error -> error
+      {:error, _reason} = error -> error
+    end
+  end
+
+  # `File.rm_rf/1` fails with a *three*-tuple, `{:error, reason, path}`, which
+  # matches nobody's `{:error, reason}` clause — every caller here specs the
+  # two-tuple, so it is normalised once, here.
+  defp rm_rf(path) do
+    case File.rm_rf(path) do
+      {:ok, _removed} -> :ok
+      {:error, reason, _path} -> {:error, reason}
     end
   end
 
@@ -438,6 +448,18 @@ defmodule PhoenixKitKnowledgeBase.Storage do
        }}
     end
   end
+
+  @doc """
+  Whether bytes can be indexed as a note's text: valid UTF-8 with no NUL.
+
+  Postgres stores neither invalid UTF-8 nor NUL in a `text` column, and refuses
+  the whole row rather than the offending byte. A file is free to hold either —
+  a stray binary renamed `.md`, a Latin-1 export — so the indexer asks first and
+  reports the file, where an insert would raise.
+  """
+  @spec text?(binary()) :: boolean()
+  def text?(content) when is_binary(content),
+    do: String.valid?(content) and not String.contains?(content, <<0>>)
 
   @doc "SHA-256 of a note's bytes, hex encoded. Used for change and rename detection."
   @spec hash(binary()) :: String.t()
@@ -709,23 +731,21 @@ defmodule PhoenixKitKnowledgeBase.Storage do
   @spec purge(String.t(), String.t()) :: :ok | {:error, term()}
   def purge(directory, trash_path) do
     with {:ok, path} <- vault_child(directory, trash_path),
-         true <- String.starts_with?(trash_path, @trash_dir <> "/"),
-         {:ok, _} <- File.rm_rf(path) do
-      :ok
+         true <- String.starts_with?(trash_path, @trash_dir <> "/") do
+      rm_rf(path)
     else
       # A "purge" pointed outside the trash is a delete of a live note wearing
       # the wrong name — refuse rather than resolve it.
       false -> {:error, :not_in_trash}
-      other -> other
+      {:error, _reason} = error -> error
     end
   end
 
   @doc "Empty the vault's trash."
   @spec empty_trash(String.t()) :: :ok | {:error, term()}
   def empty_trash(directory) do
-    with {:ok, path} <- vault_child(directory, @trash_dir),
-         {:ok, _} <- File.rm_rf(path) do
-      :ok
+    with {:ok, path} <- vault_child(directory, @trash_dir) do
+      rm_rf(path)
     end
   end
 

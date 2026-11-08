@@ -331,16 +331,26 @@ defmodule PhoenixKitKnowledgeBase.Links do
 
   # ── Reads ─────────────────────────────────────────────────────────────────
 
-  @doc "Notes that link *to* this one — the 'linked mentions' panel, in title order."
+  @doc """
+  Notes that link *to* this one — the 'linked mentions' panel, in title order.
+
+  Each source once. A note may name the same target two ways — `[[Ideas]]` and
+  `[[research/Ideas]]` are different keys, so two link rows — and listing it
+  twice would say two notes mention this one.
+  """
   @spec backlinks(Note.t()) :: [Note.t()]
   def backlinks(%Note{uuid: uuid}) do
-    repo().all(
+    sources =
       from(l in NoteLink,
-        join: source in Note,
-        on: source.uuid == l.source_note_uuid,
         where: l.target_note_uuid == ^uuid,
-        order_by: [asc: source.title, asc: source.relative_path],
-        select: source
+        distinct: true,
+        select: l.source_note_uuid
+      )
+
+    repo().all(
+      from(n in Note,
+        where: n.uuid in subquery(sources),
+        order_by: [asc: n.title, asc: n.relative_path]
       )
     )
   end

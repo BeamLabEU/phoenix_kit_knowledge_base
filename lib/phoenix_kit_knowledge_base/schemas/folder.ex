@@ -27,15 +27,6 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Folder do
     field(:relative_path, :string)
     field(:name, :string)
 
-    # Never stored and never set. Core's `FolderExplorer` reads `folder.color`
-    # unconditionally to tint its icons, and a struct without the key raises
-    # `KeyError` the moment a vault has one folder — which no database-free test
-    # can see, because it needs a rendered page and a folder to render. Virtual,
-    # so it costs a column of nothing and the component gets its `nil`.
-    #
-    # Remove this if core ever reads the colour with `Map.get/3`.
-    field(:color, :string, virtual: true)
-
     belongs_to(:vault, Vault, foreign_key: :vault_uuid, references: :uuid, type: UUIDv7)
 
     timestamps(type: :utc_datetime_usec)
@@ -51,7 +42,9 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Folder do
     folder
     |> cast(attrs, [:vault_uuid, :relative_path])
     |> validate_required([:vault_uuid, :relative_path])
-    |> validate_length(:relative_path, min: 1, max: 1000)
+    # Bytes: the unique `(vault_uuid, relative_path)` index caps an entry at
+    # about 2.7 KB, whatever the characters are. See `Note.changeset/2`.
+    |> validate_length(:relative_path, min: 1, max: 2000, count: :bytes)
     |> validate_safe_path()
     |> put_name()
     |> unique_constraint([:vault_uuid, :relative_path], message: "is already indexed")

@@ -32,6 +32,10 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
     * `2` — `phoenix_kit_kb_vaults.path_key`: the vault a drop-in notes panel's
       path names (`notes_panel path={["CRM", …]}`), one shared and one private
       per person per name
+    * `3` — paths, link targets and vault directories become `text`. V1 made
+      them `varchar(255)`, which a nested folder or a long `[[link]]` overflows:
+      the insert raised, a save crashed the page, and one such file made every
+      rescan of its vault crash until someone removed it by hand
   """
 
   use Ecto.Migration
@@ -39,7 +43,7 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
   alias PhoenixKit.Migrations.Postgres.Helpers
 
   @initial_version 1
-  @current_version 2
+  @current_version 3
   @default_prefix "public"
   @version_table "phoenix_kit_kb_vaults"
 
@@ -499,6 +503,43 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
     end
   end
 
+  # ── v3 ────────────────────────────────────────────────────────────────────
+
+  # Every column whose value comes from a path or from a `[[link]]` someone
+  # wrote, and so has no length the filesystem or the author promised to keep
+  # under 255. `title` and `folders.name` stay: each is one filename, and a
+  # filename is at most 255 bytes. `title` could not move anyway — the
+  # generated `search_vector` reads it, and Postgres refuses to retype a column
+  # a generated column depends on.
+  #
+  # `varchar` to `text` is binary-coercible: no table rewrite, and the indexes
+  # on these columns stay valid.
+  @v3_text_columns [
+    {:phoenix_kit_kb_notes, [:relative_path, :folder_path, :title_key]},
+    {:phoenix_kit_kb_folders, [:relative_path]},
+    {:phoenix_kit_kb_note_links, [:target_key, :target_title]},
+    {:phoenix_kit_kb_vaults, [:directory]}
+  ]
+
+  defp up_v3(prefix) do
+    for {table, columns} <- @v3_text_columns do
+      alter table(table, prefix: prefix) do
+        for column <- columns, do: modify(column, :text)
+      end
+    end
+  end
+
+  # Back to 255 — which Postgres refuses, rather than truncates, if a longer
+  # value is now stored. Cutting a path short would point the row at a file
+  # that does not exist; failing the rollback is the honest answer.
+  defp down_v3(prefix) do
+    for {table, columns} <- @v3_text_columns do
+      alter table(table, prefix: prefix) do
+        for column <- columns, do: modify(column, :string)
+      end
+    end
+  end
+
   # ── internals ─────────────────────────────────────────────────────────────
 
   defp change(range, direction, opts) do
@@ -514,6 +555,8 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
   defp apply_step(1, :down, prefix), do: down_v1(prefix)
   defp apply_step(2, :up, prefix), do: up_v2(prefix)
   defp apply_step(2, :down, prefix), do: down_v2(prefix)
+  defp apply_step(3, :up, prefix), do: up_v3(prefix)
+  defp apply_step(3, :down, prefix), do: down_v3(prefix)
 
   defp record_version(_opts, 0), do: :ok
 
@@ -596,19 +639,45 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
 
   def parse_version_comment(_), do: :unstamped
 
-  # Match the schema against the shape of each known version, newest first. V2
-  # adds `vaults.path_key`. V1 is identified by `notes.relative_path` — the
-  # column that distinguishes the filesystem-backed schema from the
-  # database-only shape that preceded it.
+  # Match the schema against the shape of each known version, newest first. V3
+  # makes `note_links.target_key` `text`; V2 adds `vaults.path_key`. V1 is
+  # identified by `notes.relative_path` — the column that distinguishes the
+  # filesystem-backed schema from the database-only shape that preceded it.
   defp infer_version(repo, escaped_prefix) do
     v1? =
       table_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes") and
         column_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes", "relative_path")
 
+    v2? =
+      v1? and column_exists?(repo, escaped_prefix, "phoenix_kit_kb_vaults", "path_key")
+
     cond do
-      v1? and column_exists?(repo, escaped_prefix, "phoenix_kit_kb_vaults", "path_key") -> 2
-      v1? -> 1
-      true -> :incompatible
+      v2? and
+          column_type(repo, escaped_prefix, "phoenix_kit_kb_note_links", "target_key") == "text" ->
+        3
+
+      v2? ->
+        2
+
+      v1? ->
+        1
+
+      true ->
+        :incompatible
+    end
+  end
+
+  defp column_type(repo, escaped_prefix, table, column) do
+    query = """
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = '#{table}'
+    AND table_schema = '#{escaped_prefix}'
+    AND column_name = '#{column}'
+    """
+
+    case repo.query(query, [], log: false) do
+      {:ok, %{rows: [[type]]}} -> type
+      _ -> nil
     end
   end
 

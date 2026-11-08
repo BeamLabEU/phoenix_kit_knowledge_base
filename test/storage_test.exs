@@ -395,4 +395,16 @@ defmodule PhoenixKitKnowledgeBase.StorageTest do
       assert {:ok, []} = Storage.list_trash(dir)
     end
   end
+
+  describe "text?/1" do
+    test "UTF-8 without a NUL is text" do
+      assert Storage.text?("")
+      assert Storage.text?("Réunion — 会议 🙂")
+    end
+
+    test "a NUL, or bytes that are not UTF-8, are not" do
+      refute Storage.text?("a\0b")
+      refute Storage.text?(<<"caf", 0xE9>>)
+    end
+  end
 end

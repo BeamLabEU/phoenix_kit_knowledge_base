@@ -44,6 +44,14 @@ defmodule PhoenixKitKnowledgeBase.Markdown do
   # colour is how Obsidian marks a link to a note that doesn't exist yet.
   @unresolved_link_class "text-warning underline decoration-dotted underline-offset-2"
 
+  # Past these, a `[[…]]` is not a link and a `#…` is not a tag. Each is stored
+  # in an indexed column, and a B-tree entry tops out near 2.7 KB — an insert
+  # past it raises. No note's path is anywhere near 1,000 bytes; a tag is a
+  # filter chip. What is longer is prose that happens to have brackets around
+  # it (a pasted shell `[[ … ]]`, say), and stays prose.
+  @max_link_target_bytes 1000
+  @max_tag_length 255
+
   @typedoc """
   One parsed `[[wiki-link]]`.
 
@@ -98,7 +106,7 @@ defmodule PhoenixKitKnowledgeBase.Markdown do
   def extract_tags(frontmatter, body) when is_map(frontmatter) and is_binary(body) do
     (frontmatter_tags(frontmatter) ++ inline_tags(body))
     |> Enum.map(&normalize_tag/1)
-    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.reject(&(&1 in [nil, ""] or String.length(&1) > @max_tag_length))
     |> Enum.uniq()
     |> Enum.sort()
   end
@@ -149,6 +157,9 @@ defmodule PhoenixKitKnowledgeBase.Markdown do
         nil
 
       "" ->
+        nil
+
+      _too_long when byte_size(target) > @max_link_target_bytes ->
         nil
 
       key ->

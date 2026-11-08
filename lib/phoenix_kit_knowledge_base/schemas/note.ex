@@ -83,8 +83,12 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Note do
       :updated_by
     ])
     |> validate_required([:vault_uuid, :relative_path])
-    |> validate_length(:relative_path, min: 1, max: 1000)
+    # Bytes, not characters: the unique `(vault_uuid, relative_path)` index has
+    # a ceiling of about 2.7 KB per entry, and 1,000 CJK characters are 3,000
+    # bytes. Over it, the insert raises instead of returning this error.
+    |> validate_length(:relative_path, min: 1, max: 2000, count: :bytes)
     |> validate_path()
+    |> validate_text()
     |> put_path_derived()
     |> put_content_derived()
     |> validate_required([:title, :title_key])
@@ -116,6 +120,22 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Note do
     end
   end
 
+  # Postgres refuses a `text` value holding invalid UTF-8 or a NUL byte, and
+  # refuses it by raising. A file may hold either, so it is asked here, where
+  # the answer is an error the rescan can report against the file — and before
+  # `put_content_derived/1`, whose regexes raise on invalid UTF-8 too.
+  defp validate_text(changeset) do
+    case get_change(changeset, :content) do
+      content when is_binary(content) ->
+        if Storage.text?(content),
+          do: changeset,
+          else: add_error(changeset, :content, "is not UTF-8 text (binary data or a NUL byte)")
+
+      _ ->
+        changeset
+    end
+  end
+
   defp put_path_derived(changeset) do
     case get_field(changeset, :relative_path) do
       nil ->
@@ -140,12 +160,19 @@ defmodule PhoenixKitKnowledgeBase.Schemas.Note do
         changeset
 
       content ->
-        {frontmatter, body} = Markdown.split_frontmatter(content)
-
-        changeset
-        |> put_change(:frontmatter, frontmatter)
-        |> put_change(:tags, Markdown.extract_tags(frontmatter, body))
+        if Keyword.has_key?(changeset.errors, :content),
+          # Unreadable bytes: nothing to derive, and the regexes would raise.
+          do: changeset,
+          else: put_derived_from(changeset, content)
     end
+  end
+
+  defp put_derived_from(changeset, content) do
+    {frontmatter, body} = Markdown.split_frontmatter(content)
+
+    changeset
+    |> put_change(:frontmatter, frontmatter)
+    |> put_change(:tags, Markdown.extract_tags(frontmatter, body))
   end
 
   @doc """

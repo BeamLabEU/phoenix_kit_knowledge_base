@@ -27,6 +27,13 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
   them off arbitrarily is still better than dropping both uuids, and the
   resulting index is correct either way.
 
+  ## One bad file is one error
+
+  A file the index cannot hold — binary bytes renamed `.md`, a path too long to
+  index — is reported in `:errors` and the scan goes on. Everything per file is
+  guarded, down to an exception: before this, one such file made the whole
+  rescan raise, every time, until somebody found it by hand.
+
   ## Links are rebuilt wholesale
 
   Once files have settled, every link in the vault is rebuilt rather than
@@ -37,7 +44,9 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
 
   import Ecto.Query
 
-  alias PhoenixKitKnowledgeBase.{Events, Links, Notes, Storage}
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
+
+  alias PhoenixKitKnowledgeBase.{Errors, Events, Links, Notes, Storage}
   alias PhoenixKitKnowledgeBase.Schemas.{Note, Vault}
 
   require Logger
@@ -136,22 +145,27 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
       report.renamed == 0 and report.folders_added == 0 and report.folders_removed == 0
   end
 
-  @doc "A one-line summary of a report."
+  @doc "A one-line summary of a report, in the current locale."
   @spec summarize(report()) :: String.t()
   def summarize(report) do
     if no_changes?(report) do
-      "Everything already up to date (#{report.unchanged} notes)."
+      ngettext(
+        "Everything already up to date (%{count} note).",
+        "Everything already up to date (%{count} notes).",
+        report.unchanged
+      )
     else
       [
-        {report.added, "added"},
-        {report.updated, "updated"},
-        {report.renamed, "moved"},
-        {report.removed, "removed"},
-        {report.folders_added, "folders added"},
-        {report.folders_removed, "folders removed"}
+        {report.added, &ngettext("%{count} note added", "%{count} notes added", &1)},
+        {report.updated, &ngettext("%{count} note updated", "%{count} notes updated", &1)},
+        {report.renamed, &ngettext("%{count} note moved", "%{count} notes moved", &1)},
+        {report.removed, &ngettext("%{count} note removed", "%{count} notes removed", &1)},
+        {report.folders_added, &ngettext("%{count} folder added", "%{count} folders added", &1)},
+        {report.folders_removed,
+         &ngettext("%{count} folder removed", "%{count} folders removed", &1)}
       ]
-      |> Enum.filter(fn {count, _label} -> count > 0 end)
-      |> Enum.map_join(", ", fn {count, label} -> "#{count} #{label}" end)
+      |> Enum.filter(fn {count, _phrase} -> count > 0 end)
+      |> Enum.map_join(", ", fn {count, phrase} -> phrase.(count) end)
     end
   end
 
@@ -159,14 +173,24 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
 
   defp reconcile_existing(report, vault, entries, indexed) do
     Enum.reduce(entries, report, fn entry, acc ->
-      note = Map.fetch!(indexed, entry.relative_path)
-
-      if unchanged?(note, entry) do
-        Map.update!(acc, :unchanged, &(&1 + 1))
-      else
-        reindex_if_content_differs(acc, vault, entry, note)
-      end
+      reconcile_one(acc, vault, entry, Map.fetch!(indexed, entry.relative_path))
     end)
+  end
+
+  defp reconcile_one(report, vault, entry, note) do
+    if unchanged?(note, entry) do
+      Map.update!(report, :unchanged, &(&1 + 1))
+    else
+      guarded(report, entry, fn -> reindex_if_content_differs(report, vault, entry, note) end)
+    end
+  end
+
+  # Whatever goes wrong with one file is that file's error, not the scan's.
+  # `fun` returns the next report; an exception becomes an error entry instead.
+  defp guarded(report, entry, fun) do
+    fun.()
+  rescue
+    exception -> add_error(report, entry.relative_path, {:exception, exception})
   end
 
   # The cheap comparison: same size and same mtime means don't even open it.
@@ -211,8 +235,16 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
     {report, _remaining} =
       Enum.reduce(entries, {report, by_hash}, fn entry, {acc, pool} ->
         case Storage.stat_note(vault.directory, entry.relative_path) do
-          {:ok, stat} -> claim_or_add(acc, pool, vault, entry, stat)
-          {:error, reason} -> {add_error(acc, entry.relative_path, reason), pool}
+          {:ok, stat} ->
+            try do
+              claim_or_add(acc, pool, vault, entry, stat)
+            rescue
+              exception ->
+                {add_error(acc, entry.relative_path, {:exception, exception}), pool}
+            end
+
+          {:error, reason} ->
+            {add_error(acc, entry.relative_path, reason), pool}
         end
       end)
 
@@ -328,23 +360,22 @@ defmodule PhoenixKitKnowledgeBase.Rescan do
     |> repo().update()
   end
 
+  # The described reason, not `inspect/1` of it: a changeset carries the file's
+  # whole content, and a note's text has no business in a log line.
   defp add_error(report, path, reason) do
-    Logger.warning("[knowledge_base] rescan could not index #{path}: #{inspect(reason)}")
-    Map.update!(report, :errors, &(&1 ++ [%{path: path, reason: describe(reason)}]))
+    description = describe(reason)
+    Logger.warning("[knowledge_base] rescan could not index #{path}: #{description}")
+    Map.update!(report, :errors, &(&1 ++ [%{path: path, reason: description}]))
   end
 
-  defp describe(%Ecto.Changeset{} = changeset) do
-    changeset
-    |> Ecto.Changeset.traverse_errors(fn {msg, opts} ->
-      Enum.reduce(opts, msg, fn {key, value}, acc ->
-        String.replace(acc, "%{#{key}}", to_string(value))
-      end)
-    end)
-    |> Enum.map_join("; ", fn {field, messages} -> "#{field} #{Enum.join(messages, ", ")}" end)
-  end
+  defp describe(%Ecto.Changeset{} = changeset), do: Errors.changeset_message(changeset)
 
-  defp describe(:enoent), do: "file disappeared during the scan"
-  defp describe(:eacces), do: "permission denied"
-  defp describe(:unsafe_path), do: "path escapes the vault directory"
+  defp describe(:enoent), do: gettext("file disappeared during the scan")
+  defp describe(:eacces), do: gettext("permission denied")
+  defp describe(:unsafe_path), do: gettext("path escapes the vault directory")
+
+  defp describe({:exception, exception}),
+    do: gettext("could not be indexed: %{reason}", reason: Exception.message(exception))
+
   defp describe(reason), do: inspect(reason)
 end

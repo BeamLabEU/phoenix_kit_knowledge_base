@@ -29,7 +29,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   require Logger
 
-  alias PhoenixKitKnowledgeBase.{Events, Links, Markdown, Storage}
+  alias PhoenixKitKnowledgeBase.{Errors, Events, Links, Markdown, Storage}
   alias PhoenixKitKnowledgeBase.Schemas.{Folder, Note, Vault}
 
   defp repo, do: PhoenixKit.RepoHelper.repo()
@@ -259,7 +259,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       else
         error ->
           Logger.error(
-            "[knowledge_base] could not reindex #{new_path} after moving #{from}: #{inspect(error)}"
+            "[knowledge_base] could not reindex #{new_path} after moving #{from}: #{Errors.for_log(error)}"
           )
 
           {keys, [new_path | failed]}
@@ -551,7 +551,8 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     folder = Map.get(attrs, "folder_path") || Map.get(attrs, :folder_path) || ""
     content = Map.get(attrs, "content") || Map.get(attrs, :content) || ""
 
-    with {:ok, relative_path} <- build_note_path(title, folder),
+    with :ok <- check_text(content),
+         {:ok, relative_path} <- build_note_path(title, folder),
          false <- Storage.note_exists?(vault.directory, relative_path),
          {:ok, stat} <- Storage.write_note(vault.directory, relative_path, content),
          {:ok, note} <- index_entry(vault, relative_path, stat, created_by: actor_uuid) do
@@ -576,7 +577,8 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   @spec update_content(Vault.t(), Note.t(), String.t(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}
   def update_content(%Vault{} = vault, %Note{} = note, content, opts \\ []) do
-    with :ok <- check_not_stale(vault, note, opts),
+    with :ok <- check_text(content),
+         :ok <- check_not_stale(vault, note, opts),
          {:ok, stat} <- Storage.write_note(vault.directory, note.relative_path, content) do
       index_entry(vault, note.relative_path, stat,
         updated_by: opts[:actor_uuid],
@@ -774,6 +776,16 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       {:error, _reason} -> :missing
     end
   end
+
+  # Refused before anything touches the disk. Bytes the index cannot hold would
+  # land in the file and then fail to index, leaving the row describing the
+  # previous version — and the stale guard refusing every save after it. A
+  # browser can send a NUL (`\u0000` is valid JSON); nothing a person types does.
+  defp check_text(content) when is_binary(content) do
+    if Storage.text?(content), do: :ok, else: {:error, :not_text}
+  end
+
+  defp check_text(_content), do: {:error, :not_text}
 
   # The guard itself. `force: true` is the "save anyway" escape hatch; without
   # it, a file that changed underneath us stops the write rather than silently

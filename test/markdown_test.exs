@@ -189,4 +189,18 @@ defmodule PhoenixKitKnowledgeBase.MarkdownTest do
       assert Markdown.excerpt(nil) == ""
     end
   end
+
+  describe "what is too long to be a link or a tag" do
+    # Each is stored in an indexed column; a B-tree entry tops out near 2.7 KB.
+    test "a [[…]] target past 1,000 bytes is prose" do
+      assert Markdown.wiki_links("[[#{String.duplicate("x", 1001)}]]") == []
+      assert [%{target: target}] = Markdown.wiki_links("[[#{String.duplicate("x", 1000)}]]")
+      assert byte_size(target) == 1000
+    end
+
+    test "a tag past 255 characters is dropped, the others kept" do
+      long = String.duplicate("t", 256)
+      assert Markdown.extract_tags(%{"tags" => [long, "ok"]}, "#a ##{long}") == ["a", "ok"]
+    end
+  end
 end

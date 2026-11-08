@@ -76,11 +76,11 @@ defmodule PhoenixKitKnowledgeBase.Events do
   Announce that a live-editing session can no longer save.
 
   Sent when the collaboration store refuses a flush because the file moved
-  underneath the session. Leaf's room records the conflict, stops writing and
-  tells nobody — not the sessions, not the caller of `flush_now/1`, which
-  answers `:ok` regardless — so people go on typing into a document that will
-  never be written and is discarded when the room stops. This is the only
-  warning anyone gets; see `PhoenixKitKnowledgeBase.Collab.Store`.
+  underneath the session. Leaf 0.6's room recorded the conflict, stopped
+  writing and told nobody, so this was the only warning anyone got. Leaf ≥ 0.8
+  (what core admits today) also announces `{:leaf_conflict, …}` on its own
+  topic; this stays until the vault page handles that one itself — see
+  `PhoenixKitKnowledgeBase.Collab.Store`.
 
   Carries no origin check on the receiving side: everyone in that note needs to
   know, including whoever caused it.
@@ -100,10 +100,14 @@ defmodule PhoenixKitKnowledgeBase.Events do
   def own?(_payload), do: false
 
   defp broadcast(vault_uuid, {event, payload}) do
-    PubSubHelper.broadcast(
-      vault_topic(vault_uuid),
-      {event, Map.put(payload, :origin, self())}
-    )
+    # No PubSub running is not an error: `mix phoenix_kit_knowledge_base.rescan`
+    # is its own OS process and starts none, and there is nobody in it to tell.
+    if Process.whereis(PubSubHelper.pubsub()) do
+      PubSubHelper.broadcast(
+        vault_topic(vault_uuid),
+        {event, Map.put(payload, :origin, self())}
+      )
+    end
 
     :ok
   rescue

@@ -42,7 +42,7 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
 
   require Logger
 
-  alias PhoenixKitKnowledgeBase.{Events, Notes, Storage}
+  alias PhoenixKitKnowledgeBase.{Errors, Events, Notes, Storage}
 
   @impl true
   def load(note_uuid) do
@@ -110,12 +110,11 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
         # Our name for it; Leaf's is `:conflict`, and the room only knows that
         # one. Same event: the bytes on disk are not the bytes we last saw.
         #
-        # Announced on our own topic because Leaf will not announce it. The room
-        # records the conflict, stops writing, and tells nobody — no broadcast,
-        # no reply, and `flush_now/1` answers `:ok` either way — so without this
-        # people go on typing into a document that is never written again and is
-        # dropped when the room stops. This message is the only warning there
-        # is; see the conflict section above.
+        # Announced on our own topic as well. Leaf 0.6's room recorded the
+        # conflict, stopped writing and told nobody (`flush_now/1` answered
+        # `:ok` either way), so this was the only warning there was. Leaf ≥ 0.8
+        # announces `{:leaf_conflict, …}` itself; this stays until the vault
+        # page handles that message (see `Events.note_conflict/2`).
         Events.note_conflict(note.vault_uuid, note.uuid)
         {:error, :conflict}
 
@@ -127,7 +126,7 @@ defmodule PhoenixKitKnowledgeBase.Collab.Store do
 
       {:error, reason} ->
         Logger.warning(
-          "[knowledge_base] collab flush failed for #{note.uuid}: #{inspect(reason)}"
+          "[knowledge_base] collab flush failed for #{note.uuid}: #{Errors.for_log(reason)}"
         )
 
         {:error, reason}
