@@ -108,6 +108,7 @@ defmodule PhoenixKitKnowledgeBase do
   """
 
   use PhoenixKit.Module
+  use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
   alias PhoenixKit.Dashboard.Tab
   alias PhoenixKit.Settings
@@ -181,14 +182,16 @@ defmodule PhoenixKitKnowledgeBase do
     [
       %Tab{
         id: :admin_knowledge_base,
-        label: "Knowledge Base",
+        label: gettext_noop("Knowledge Base"),
         icon: "hero-book-open",
         path: "knowledge-base",
         priority: 650,
         level: :admin,
         permission: module_key(),
         match: :prefix,
-        group: :admin_modules
+        group: :admin_modules,
+        # Core translates the label through this when it draws the sidebar.
+        gettext_backend: PhoenixKitKnowledgeBase.Gettext
       }
     ]
   end

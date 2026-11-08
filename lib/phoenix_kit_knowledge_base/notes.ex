@@ -350,6 +350,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   Options:
 
     * `:folder_path` — `""` for the vault root, `:any` (default) for everything
+    * `:under` — a folder and everything below it (`""` or `nil`: no limit)
     * `:tag` — only notes carrying this tag
     * `:order` — `:title` (default) or `:updated`
     * `:limit`
@@ -358,6 +359,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   def list_notes(vault_uuid, opts \\ []) do
     from(n in Note, where: n.vault_uuid == ^vault_uuid)
     |> filter_by_folder(Keyword.get(opts, :folder_path, :any))
+    |> filter_by_subtree(Keyword.get(opts, :under))
     |> filter_by_tag(Keyword.get(opts, :tag))
     |> order_notes(Keyword.get(opts, :order, :title))
     |> maybe_limit(Keyword.get(opts, :limit))
@@ -366,6 +368,15 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   defp filter_by_folder(query, :any), do: query
   defp filter_by_folder(query, path), do: from(n in query, where: n.folder_path == ^path)
+
+  defp filter_by_subtree(query, nil), do: query
+  defp filter_by_subtree(query, ""), do: query
+
+  defp filter_by_subtree(query, path) do
+    from(n in query,
+      where: n.folder_path == ^path or like(n.folder_path, ^(escape_like(path) <> "/%"))
+    )
+  end
 
   defp filter_by_tag(query, nil), do: query
   defp filter_by_tag(query, tag), do: from(n in query, where: ^tag in n.tags)

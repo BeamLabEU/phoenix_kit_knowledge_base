@@ -124,6 +124,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
      # `active_path_uuids/2` walks.
      |> assign(:expanded_folders, MapSet.new())
      |> assign(:sidebar_collapsed, false)
+     # Phone only: whether the sidebar is shown over an open note. Below `lg`
+     # the sidebar stacks above the note and pushed the editor off the first
+     # screen, so with a note open it waits behind the "Files" button.
+     |> assign(:files_open, false)
      |> assign(:renaming_folder, nil)
      |> assign(:renaming_source, nil)
      |> assign(:renaming_text, "")
@@ -165,6 +169,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          |> assign(:page_title, vault.name)
          |> assign(:page_subtitle, vault.description)
          |> load_workspace()
+         # Opening a note (or the new-note form) from the phone sidebar is
+         # the end of using it; put it away so the note is what shows.
+         |> assign(:files_open, false)
          |> apply_action(socket.assigns.live_action, params)}
     end
   end
@@ -470,6 +477,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         else: MapSet.put(expanded, uuid)
 
     {:noreply, assign(socket, :expanded_folders, expanded)}
+  end
+
+  def handle_event("toggle_files", _params, socket) do
+    {:noreply, assign(socket, :files_open, not socket.assigns.files_open)}
   end
 
   def handle_event("toggle_sidebar", _params, socket) do
@@ -1395,28 +1406,50 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           <span class="badge badge-sm badge-ghost">{@role}</span>
         </div>
 
-        <div class="flex items-center gap-2">
-          <.link :if={@can_manage} navigate={Paths.members(@vault.slug)} class="btn btn-ghost btn-sm">
-            <.icon name="hero-user-group" class="w-4 h-4" /> Members
+        <%!-- Below `sm` these are icons only (each keeps its label as a
+             tooltip and for screen readers); four labelled buttons do not fit
+             a phone and pushed the page wider than the screen. --%>
+        <div class="flex flex-wrap items-center gap-1 sm:gap-2">
+          <.link
+            :if={@can_manage}
+            navigate={Paths.members(@vault.slug)}
+            class="btn btn-ghost btn-sm"
+            title="Members"
+            aria-label="Members"
+          >
+            <.icon name="hero-user-group" class="w-4 h-4" />
+            <span class="hidden sm:inline">Members</span>
           </.link>
           <button
             type="button"
             phx-click="toggle_trash"
             data-drop-trash="true"
             class={["btn btn-sm", if(@trash_open, do: "btn-active", else: "btn-ghost")]}
+            title="Trash"
+            aria-label="Trash"
           >
-            <.icon name="hero-trash" class="w-4 h-4" /> Trash
+            <.icon name="hero-trash" class="w-4 h-4" />
+            <span class="hidden sm:inline">Trash</span>
           </button>
           <button
             type="button"
             phx-click="rescan"
             class="btn btn-ghost btn-sm"
             title="Re-read the vault directory and pick up edits made outside this app"
+            aria-label="Rescan"
           >
-            <.icon name="hero-arrow-path" class="w-4 h-4" /> Rescan
+            <.icon name="hero-arrow-path" class="w-4 h-4" />
+            <span class="hidden sm:inline">Rescan</span>
           </button>
-          <.link :if={@can_write} patch={Paths.new_note(@vault.slug)} class="btn btn-primary btn-sm">
-            <.icon name="hero-document-plus" class="w-4 h-4" /> New note
+          <.link
+            :if={@can_write}
+            patch={Paths.new_note(@vault.slug)}
+            class="btn btn-primary btn-sm"
+            title="New note"
+            aria-label="New note"
+          >
+            <.icon name="hero-document-plus" class="w-4 h-4" />
+            <span class="hidden sm:inline">New note</span>
           </.link>
         </div>
       </div>
@@ -1438,6 +1471,21 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       </div>
 
       <div class="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] xl:grid-cols-[18rem_minmax(0,1fr)_18rem]">
+        <%!-- Phone only, and above the sidebar so it is at the top of the
+             screen whether the file list is open or not. --%>
+        <div :if={not is_nil(@note) or @live_action == :new} class="lg:hidden">
+          <button
+            type="button"
+            phx-click="toggle_files"
+            class={["btn btn-sm", if(@files_open, do: "btn-active", else: "btn-ghost")]}
+            aria-expanded={to_string(@files_open)}
+            aria-controls="kb-sidebar"
+          >
+            <.icon name={if @files_open, do: "hero-x-mark", else: "hero-bars-3"} class="w-4 h-4" />
+            {if @files_open, do: "Hide files", else: "Files"}
+          </button>
+        </div>
+
         <.sidebar
           folder_tree={@folder_tree}
           notes={@notes}
@@ -1461,6 +1509,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           renaming_folder={@renaming_folder}
           renaming_source={@renaming_source}
           renaming_text={@renaming_text}
+          phone_hidden={(not is_nil(@note) or @live_action == :new) and not @files_open}
         />
 
         <main class="min-w-0">
@@ -1488,9 +1537,11 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
           />
         </main>
 
+        <%!-- Third column on `xl`; below it, under the note (in the note's
+             column on `lg`) — it used to vanish, taking backlinks with it. --%>
         <.context_panel
           :if={@note}
-          class="hidden xl:block"
+          class="lg:col-start-2 xl:col-start-3 xl:row-start-1 border-t border-base-200 pt-4 xl:border-0 xl:pt-0"
           vault={@vault}
           note={@note}
           backlinks={@backlinks}
@@ -1525,6 +1576,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   attr :renaming_folder, :any, required: true
   attr :renaming_source, :any, required: true
   attr :renaming_text, :string, required: true
+  attr :phone_hidden, :boolean, default: false
 
   defp sidebar(assigns) do
     ~H"""
@@ -1539,9 +1591,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     <aside
       id="kb-sidebar"
       phx-hook="MediaDragDrop"
-      class="space-y-4 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto lg:pr-1"
+      class={[
+        "space-y-4 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto lg:pr-1",
+        @phone_hidden && "hidden lg:block"
+      ]}
     >
-      <p class="text-xs text-base-content/40 break-all" title="These notes are files on disk">
+      <p
+        class="text-xs text-base-content/40 truncate"
+        title={"These notes are files on disk: " <> @directory}
+      >
         <.icon name="hero-folder-open" class="w-3 h-3 inline-block" />
         {@directory}
       </p>
@@ -1663,7 +1721,17 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         <.folder_explorer
           id="kb-folder-explorer"
           myself={nil}
-          class="block"
+          class={
+            [
+              "block",
+              # Core's tree pane is a fixed 240px (an inline style) with a divider
+              # on its right, for a page where it sits beside a file grid. Here it
+              # IS the column, so on a phone it takes the width and drops the
+              # divider. Important, because only that beats an inline style.
+              "max-lg:[&>div>div]:w-full! max-lg:[&>div>div]:max-w-none!",
+              "max-lg:[&>div>div]:border-r-0! max-lg:[&>div>div]:mr-0! max-lg:[&>div>div]:pr-0!"
+            ]
+          }
           folder_tree={@folder_tree}
           current_folder={current_folder(@folders, @selected_folder)}
           expanded_folders={@expanded_folders}

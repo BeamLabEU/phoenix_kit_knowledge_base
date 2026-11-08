@@ -29,6 +29,9 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
 
     * `0` — tables absent (not installed)
     * `1` — all five tables present, UUIDv7 primary keys
+    * `2` — `phoenix_kit_kb_vaults.path_key`: the vault a drop-in notes panel's
+      path names (`notes_panel path={["CRM", …]}`), one shared and one private
+      per person per name
   """
 
   use Ecto.Migration
@@ -36,7 +39,7 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
   alias PhoenixKit.Migrations.Postgres.Helpers
 
   @initial_version 1
-  @current_version 1
+  @current_version 2
   @default_prefix "public"
   @version_table "phoenix_kit_kb_vaults"
 
@@ -445,12 +448,61 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
     drop_if_exists(table(:phoenix_kit_kb_vaults, prefix: prefix))
   end
 
+  # ── v2 ────────────────────────────────────────────────────────────────────
+
+  # A notes panel names its vault by the first segment of its path
+  # (`["CRM", "Clients", "Acme"]` → "CRM"). Names are not unique and slugs are
+  # unique across everyone's vaults, so neither can find "the CRM vault"; this
+  # key can. NULL on every vault a panel did not create, which the partial
+  # indexes ignore.
+  defp up_v2(prefix) do
+    alter table(:phoenix_kit_kb_vaults, prefix: prefix) do
+      add_if_not_exists(:path_key, :string)
+    end
+
+    # One shared ("everyone here") vault per name…
+    create_if_not_exists(
+      unique_index(:phoenix_kit_kb_vaults, [:path_key],
+        name: :phoenix_kit_kb_vaults_shared_path_key_index,
+        where: "scope = 'system' AND path_key IS NOT NULL",
+        prefix: prefix
+      )
+    )
+
+    # …and one private ("only me") vault per person per name.
+    create_if_not_exists(
+      unique_index(:phoenix_kit_kb_vaults, [:owner_uuid, :path_key],
+        name: :phoenix_kit_kb_vaults_private_path_key_index,
+        where: "scope = 'user' AND path_key IS NOT NULL",
+        prefix: prefix
+      )
+    )
+  end
+
+  defp down_v2(prefix) do
+    drop_if_exists(
+      index(:phoenix_kit_kb_vaults, [:owner_uuid, :path_key],
+        name: :phoenix_kit_kb_vaults_private_path_key_index,
+        prefix: prefix
+      )
+    )
+
+    drop_if_exists(
+      index(:phoenix_kit_kb_vaults, [:path_key],
+        name: :phoenix_kit_kb_vaults_shared_path_key_index,
+        prefix: prefix
+      )
+    )
+
+    alter table(:phoenix_kit_kb_vaults, prefix: prefix) do
+      remove_if_exists(:path_key, :string)
+    end
+  end
+
   # ── internals ─────────────────────────────────────────────────────────────
 
   defp change(range, direction, opts) do
-    Enum.each(range, fn
-      1 -> apply_step(direction, opts.prefix)
-    end)
+    Enum.each(range, fn version -> apply_step(version, direction, opts.prefix) end)
 
     case direction do
       :up -> record_version(opts, Enum.max(range))
@@ -458,8 +510,10 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
     end
   end
 
-  defp apply_step(:up, prefix), do: up_v1(prefix)
-  defp apply_step(:down, prefix), do: down_v1(prefix)
+  defp apply_step(1, :up, prefix), do: up_v1(prefix)
+  defp apply_step(1, :down, prefix), do: down_v1(prefix)
+  defp apply_step(2, :up, prefix), do: up_v2(prefix)
+  defp apply_step(2, :down, prefix), do: down_v2(prefix)
 
   defp record_version(_opts, 0), do: :ok
 
@@ -542,14 +596,20 @@ defmodule PhoenixKitKnowledgeBase.Migrations do
 
   def parse_version_comment(_), do: :unstamped
 
-  # Match the schema against the shape of each known version, newest first. V1
-  # is identified by `notes.relative_path` — the column that distinguishes the
-  # filesystem-backed schema from the database-only shape that preceded it.
+  # Match the schema against the shape of each known version, newest first. V2
+  # adds `vaults.path_key`. V1 is identified by `notes.relative_path` — the
+  # column that distinguishes the filesystem-backed schema from the
+  # database-only shape that preceded it.
   defp infer_version(repo, escaped_prefix) do
-    if table_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes") and
-         column_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes", "relative_path"),
-       do: 1,
-       else: :incompatible
+    v1? =
+      table_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes") and
+        column_exists?(repo, escaped_prefix, "phoenix_kit_kb_notes", "relative_path")
+
+    cond do
+      v1? and column_exists?(repo, escaped_prefix, "phoenix_kit_kb_vaults", "path_key") -> 2
+      v1? -> 1
+      true -> :incompatible
+    end
   end
 
   defp column_exists?(repo, escaped_prefix, table, column) do

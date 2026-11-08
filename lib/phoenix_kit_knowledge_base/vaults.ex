@@ -233,6 +233,18 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
     end
   end
 
+  @doc false
+  # `Places`' door. Whether this person may create the vault is the notes
+  # panel's question — its `:authorize` hook, already asked — not the admin
+  # permission `create/3` checks for a system vault.
+  @spec create_for_place(map(), :user | :system, String.t() | nil, String.t()) ::
+          {:ok, Vault.t()} | {:error, Ecto.Changeset.t()} | {:error, term()}
+  def create_for_place(attrs, kind, owner_email, path_key) do
+    attrs
+    |> normalize()
+    |> insert_vault(kind, owner_email, &Vault.put_path_key(&1, path_key))
+  end
+
   @doc "Update a vault's name, slug, description or icon. Scope and owner are fixed at creation."
   @spec update(Vault.t(), map()) :: {:ok, Vault.t()} | {:error, Ecto.Changeset.t()}
   def update(%Vault{} = vault, attrs) do
@@ -364,20 +376,20 @@ defmodule PhoenixKitKnowledgeBase.Vaults do
   # created before the row is inserted: a vault row pointing at a directory that
   # does not exist would fail on the first read, whereas a directory with no
   # vault row is inert and gets adopted if the vault is created again.
-  defp insert_vault(attrs, kind, owner_email) do
+  defp insert_vault(attrs, kind, owner_email, decorate \\ & &1) do
     changeset = Vault.changeset(%Vault{}, attrs)
     slug = Ecto.Changeset.get_field(changeset, :slug)
 
     with {:ok, attrs} <- put_directory(attrs, kind, owner_email, slug),
          :ok <- ensure_directory(attrs),
-         changeset <- Vault.changeset(%Vault{}, attrs),
+         changeset <- %Vault{} |> Vault.changeset(attrs) |> decorate.(),
          {:ok, vault} <- repo().insert(changeset) do
       {:ok, vault}
     else
       {:error, %Ecto.Changeset{} = changeset} ->
         retry_on_slug_conflict(
           {:error, changeset},
-          &insert_vault(&1, kind, owner_email),
+          &insert_vault(&1, kind, owner_email, decorate),
           attrs
         )
 
