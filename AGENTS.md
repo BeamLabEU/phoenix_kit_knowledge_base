@@ -39,8 +39,10 @@ lib/phoenix_kit_knowledge_base/
   collab.ex         a Leaf.Collab.Room per note; started from `children/0`
   collab/store.ex   where a live document goes: Notes -> disk -> index
   migrations.ex     versioned coordinator (the host's migration calls into this)
+  errors.ex         every error reason → one translated sentence; `for_log/1`
   schemas/          five Ecto schemas, all `use PhoenixKit.SchemaPrefix`
   web/              three LiveViews, NotesPanel (the drop-in widget) + Components
+test/support/router.ex                   the admin pages routed for LiveViewTest, scope assigned
 scripts/smoke_http.exs                   renders every page as a logged-in user
 scripts/verify_links.exs                 link resolution against a real database
 scripts/verify_collab.exs                live editing: what a room writes and refuses
@@ -55,7 +57,7 @@ Four layers, and **none of them alone is sufficient**:
 | Layer | Command | Catches | Blind to |
 |---|---|---|---|
 | Unit | `mix test` | parsing, path safety, resolution, changesets | anything needing a DB or a rendered page |
-| Integration | `PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=… mix test` (`test/integration/`, `DataCase`) | `Places`, migrations, the unique-index races — against Postgres and a temp vault root | templates; **excluded with exit 0 when no database answers — read the summary** |
+| Integration | `PGHOST=… PGUSER=… PGPASSWORD=… PGDATABASE=… mix test` (`test/integration/`, `DataCase`) | `Places`, migrations, the unique-index races, and the three admin pages mounted through `Test.Router` (`vault_live_test.exs`) — against Postgres and a temp vault root | core's admin chrome (header bar, toolbar slot, sidebar), which the test router does not apply; **excluded with exit 0 when no database answers — read the summary** |
 | Live DB | `scripts/verify_links.exs`, `scripts/verify_collab.exs`, `scripts/verify_folder_move.exs`, plus ad-hoc `mix run --no-start` against the dev app | queries, migrations, indexing, rescan, what a link points at, what a room writes, folder moves | templates, client-side state |
 | HTTP | `scripts/smoke_http.exs` | template crashes, dead renders | client-side JS behaviour |
 
@@ -174,9 +176,20 @@ that app; what matters here:
   needs an `:id` — that is what becomes `data-draggable-file`. `tree_items/2`
   builds the map; it loads **every** note in the vault, which is the first thing
   to change if a vault outgrows what a sidebar can show.
-- `Folder` carries a **virtual** `:color`. Core reads it through `Map.get/2`
-  since 2.13.14, so this is now belt-and-braces rather than load-bearing — it
-  still matters for anyone running an older core.
+- `Folder` used to carry a virtual `:color` because core read `folder.color`
+  with a dot and raised `KeyError`. Core reads it with `Map.get/2` since
+  2.13.14, and the floor is 2.65.0, so the field is gone.
+- **The admin pages draw no header of their own.** Core's admin bar renders
+  `page_section / page_crumbs / page_title` and, beside them, the page's
+  `page_toolbar: {Module, :fun}` — called with the LiveView's own assigns, so
+  its clicks reach the LiveView. A second in-page `<h1>` stacks under the bar.
+  The rules are core's `dev_docs/guides/2026-09-25-admin-header-trail.md`; a
+  title never carries a trail (`"Members"`, not `"Research · Members"`).
+- `use PhoenixKitWeb, :live_view` installs **core's** Gettext backend. Every
+  LiveView here re-`use`s `Gettext, backend: PhoenixKitKnowledgeBase.Gettext`
+  after it; without that a `gettext/1` looks in core's catalogue, finds
+  nothing, and shows English. The Leaf editor needs
+  `gettext_backend={PhoenixKitKnowledgeBase.Gettext}` for the same reason.
 
 **LiveView**
 
@@ -191,7 +204,16 @@ that app; what matters here:
 - Anything that **moves the open note** must re-read its row (`refresh_open_note/1`).
   `@note.relative_path` is what `save_content/3` writes against, and the
   `:kb_note_saved` broadcast cannot fix it — it comes from the same pid, so
-  `Events.own?/1` drops it.
+  `Events.own?/1` drops it. A move by *someone else* arrives as a same-hash
+  `:kb_note_saved` (rename) or a `:kb_vault_changed` (folder move, rescan):
+  `follow_open_note/1` takes the fresh row then, and only while its hash is
+  still the buffer's.
+- **Never replace `@note` with a peer's row on a remote change.**
+  `@note.content_hash` is what the buffer was loaded from, and it is what the
+  stale guard compares the file against. Taking the peer's row arms the guard
+  with *their* hash, and the next keystroke overwrites their save. Raise
+  `remote_change` and leave `@note` alone; the next save is refused as
+  `:stale` and the person chooses. Pinned by `vault_live_test.exs`.
 
 **HEEx**
 
@@ -242,6 +264,23 @@ that app; what matters here:
   Set `:token` to match the parser: `Markdown`'s wiki-link regex is
   `[^\[\]\n]+`, and its tag regex is `[\p{L}\p{N}_/-]`. Pinned by a test,
   because inheriting the wrong default fails nothing.
+
+**Postgres**
+
+- V1 made paths and link targets `varchar(255)`; a nested folder or a long
+  `[[link]]` overflowed it, the insert **raised**, and the file it left made
+  every later rescan of the vault raise too. V3 makes them `text`. `title` and
+  `folders.name` stay 255 — one filename each — and `title` cannot be retyped
+  anyway: the generated `search_vector` reads it.
+- `text` still refuses **invalid UTF-8 and NUL**, by raising. `Note.changeset/2`
+  asks `Storage.text?/1` first, and `Notes` refuses `:not_text` before writing.
+- A B-tree entry tops out near 2.7 KB, so `relative_path` is capped in
+  **bytes** (`count: :bytes`), and `Markdown` stops calling a `[[…]]` past
+  1,000 bytes a link or a `#…` past 255 characters a tag.
+- `Rescan` guards every file: one that cannot be indexed is an entry in
+  `:errors`, never an exception.
+- **Never log a changeset** (or `inspect` an `{:error, changeset}`): it carries
+  the note's whole content. `Errors.for_log/1` reduces it to its messages.
 
 **Filesystem**
 

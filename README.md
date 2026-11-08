@@ -124,8 +124,11 @@ propagate live:
   There is only one surface and it may hold unsaved keystrokes, so reloading is
   always your call
 - **the note you're on was deleted** → you're returned to the vault
-- **a rescan ran anywhere** — including `mix phoenix_kit_knowledge_base.rescan`
-  in a terminal — → every open browser refreshes
+- **a rescan ran** from the Rescan button → every open browser refreshes.
+  `mix phoenix_kit_knowledge_base.rescan` runs in its own OS process with no
+  PubSub, so open pages pick its changes up on their next navigation; to
+  refresh them at once, run `PhoenixKitKnowledgeBase.Rescan.run/1` on the live
+  node instead (e.g. through a release's `rpc`)
 
 A rescan emits **one** message, not one per file: reindexing a thousand notes
 should not push a thousand messages through every open browser to say the same
@@ -377,7 +380,7 @@ a silently-stripped separator is a note filed somewhere its author didn't
 choose. Writes are atomic — temp file plus rename — so no reader ever sees a
 half-written note.
 
-There are 190 tests on this module alone.
+There are 300-odd tests on this module alone.
 
 ## Schema
 
@@ -415,9 +418,10 @@ Each a clean addition later; none needs a schema change:
 
 - **Filesystem watcher.** Deliberate — rescan is explicit. `inotify` via
   `file_system` would make it live.
-- **Attachments.** External image URLs render; Leaf's image button opens its
-  by-URL dialog. There is no upload path — wiring `upload_handler` to core's
-  `MediaBrowser` is the obvious way in.
+- **Attachments.** External image URLs render (`![](https://…)`), but the
+  editor shows no image or video button: Leaf draws those only when the host
+  lists them in `toolbar`, and there is no upload path to give them — wiring
+  `upload_handler` to core's `MediaBrowser` is the obvious way in.
 - **Graph view.** The link index is already there; this is a JS rendering job.
 - **Note history.** No revisions table — though the vault is a directory, so
   `git init` in it gives you exactly that.
@@ -428,29 +432,48 @@ Each a clean addition later; none needs a schema change:
   flushed on a timer — files are deliberately not real-time. The blocker is
   Leaf needing a document model, not the CRDT layer.
 - **Presence.** No "3 people viewing this vault" indicator.
-- **Folder rename in the UI.** `mv` the directory and rescan.
+
+## Translations
+
+The module owns its catalogue (`PhoenixKitKnowledgeBase.Gettext`, under
+`priv/gettext/`) and ships **Russian** and **Estonian**; English is the source.
+The host only sets the locale. That covers the admin pages, the notes panel,
+flash and error messages, the rescan report, the permission labels core shows
+on its roles screens, and the Leaf editor's own toolbar (the `leaf` domain,
+handed to Leaf as `gettext_backend`). Two strings stay English for now: the
+module's name on core's Modules page, which core translates only from its own
+catalogue, and the validation messages this module's own changesets define
+(the slug rule, say) — Ecto's standard ones go through core's catalogue, as on
+every core form.
+
+`mix precommit` fails when a string is added to the code but not extracted, and
+`test/gettext_catalogue_test.exs` fails when a locale misses one.
 
 ## Development
 
 ```bash
 mix deps.get
-mix test          # 190 tests, no database required
-mix quality       # format, credo --strict, dialyzer
+mix test          # unit tests; the integration half too when Postgres answers
+mix precommit     # compile --warnings-as-errors, gettext, format, credo --strict, dialyzer
 ```
 
-Tests are database-free by design: they cover markdown parsing, path containment
-and filename rules against a real temp directory, link-resolution tie-breaking,
-editor identity, changeset invariants, behaviour compliance, route ordering and
-migration version bookkeeping. The database-backed paths (indexing, rescan,
-search) are exercised against a live Postgres instead.
+Two levels in `mix test`. The unit half needs nothing: markdown parsing, path
+containment and filename rules against a real temp directory, link-resolution
+tie-breaking, editor identity, changeset invariants, behaviour compliance,
+route ordering and migration bookkeeping. The integration half
+(`test/integration/`) runs against Postgres — set `PGHOST`, `PGUSER`,
+`PGPASSWORD`, `PGDATABASE` — and covers indexing, rescan, the migrations, the
+notes panel, and the three admin pages mounted through a test router. With no
+database it is excluded, and the run still exits 0: read the summary.
 
 ### Rendering pages
 
-`mix test` has no endpoint, so it cannot catch a mistake in a template — and an
-unauthenticated `curl` never gets past the login redirect, so it never renders
-one either. A `BadBooleanError` in the sidebar reached the browser through
-exactly that gap. `scripts/smoke_http.exs` closes it by forging a session cookie
-and fetching every page as a logged-in user:
+The test router mounts the pages but not core's admin chrome — the header bar
+the toolbar renders in, the sidebar — and an unauthenticated `curl` never gets
+past the login redirect, so it never renders a page either. A
+`BadBooleanError` in the sidebar reached the browser through exactly that gap.
+`scripts/smoke_http.exs` closes it by forging a session cookie and fetching
+every page as a logged-in user in the real host:
 
 ```bash
 cd /path/to/host_app

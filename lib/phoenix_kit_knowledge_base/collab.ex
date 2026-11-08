@@ -14,18 +14,19 @@ defmodule PhoenixKitKnowledgeBase.Collab do
   source of truth anyway. Restarting would only produce an empty room wearing
   the name of a note.
 
-  ## Rooms do not stop themselves
+  ## Stopping rooms
 
-  They outlive their sessions. Leaf 0.6.0's `{:DOWN, …}` clause drops the
-  departed session from the room's `people` map and returns `{:noreply, …}` —
-  there is no stop, no idle timeout and no hibernate — so a room started for a
-  note stays up, holding that note's full text and its operation log, for the
-  life of the node. Browsing a thousand-note vault would leave a thousand
-  processes behind.
+  Under Leaf 0.6 a room outlived its sessions: its `{:DOWN, …}` clause dropped
+  the departed session and returned `{:noreply, …}`, with no stop and no idle
+  timeout, so a room started for a note stayed up for the life of the node.
+  `close_room/1` exists for that — `GenServer.stop/1` rather than a kill,
+  because the last thing a room does is write down what it was holding.
 
-  So closing them is ours: `close_room/1` stops one, and whatever opens a room
-  must close it. `GenServer.stop/1` rather than a kill, because the last thing a
-  room does is write down what it was holding.
+  Leaf ≥ 0.8, which is what core admits today, takes `:idle_after` and stops an
+  empty room itself. Nothing opens a room yet (this is groundwork; no LiveView
+  calls `room_for/1`), so `room_spec/1` does not pass it: when rooms are wired
+  to the editor, pass `idle_after:` there and `close_room/1` becomes the
+  backstop rather than the only way down.
 
   ## Why this is in `children/0`
 
