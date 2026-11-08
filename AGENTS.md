@@ -140,12 +140,20 @@ that app; what matters here:
 
 **Core's components**
 
-> **The declared constraint is `>= 2.14.0 and < 4.0.0`.** 2.14.0 is the first
-> published core carrying both `FolderExplorer`'s `items` attr and `:item`
-> slot (2.13.15 has those; 2.13.14 was never published) and the
-> `<.context_menu>` components the vault tree's right-click menus use. An
-> older locked core fails at compile time, which is the good failure mode —
-> at runtime it would be an undefined-slot raise on render. The upper bound
+> **The declared constraint is `>= 2.65.0 and < 4.0.0`.** The floor is the
+> oldest core this module is *verified* against. The oldest it *compiles*
+> against is 2.14.0, the first published core carrying both
+> `FolderExplorer`'s `items` attr and `:item` slot (2.13.15 has those; 2.13.14
+> was never published) and the `<.context_menu>` components the vault tree's
+> right-click menus use. The floor used to be 2.14.0, and that was not
+> harmless: cores up to 2.22.20 declare leaf with an open ceiling (`~> 0.7`,
+> i.e. `< 1.0.0`), while every core from 2.22.21 on caps it at a tested minor
+> (3.4.0: `~> 0.10.0`). The day Hex had a leaf newer than the newest
+> core admits, `mix deps.update --all` "solved" it by backtracking core to
+> 2.22.20, and beamlab_countries and phoenix_kit_templates with it. So when
+> leaf is ahead of core, **the lock holds leaf back. That is correct; don't
+> loosen this floor to get leaf back.** Leaf moves once core publishes a
+> release that admits it. The upper bound
 > admits core 3.x: verified against 3.0.0, which still calls
 > `migration_module/0` + `migrated_version_runtime/1` / `current_version/0`
 > for module-owned tables — this module's coordinator already speaks that.

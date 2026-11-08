@@ -77,15 +77,21 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
       # SchemaPrefix, the MarkdownEditor LiveComponent and the migration
       # helpers this module's coordinator calls
       # (`Migrations.Postgres.Helpers.uuid_v7_call/1`).
-      # `>= 2.14.0 and < 4.0.0`: 2.14.0 is the first published core carrying
-      # both `FolderExplorer`'s `items` attr / `:item` slot (2.13.15+) and the
-      # `<.context_menu>` components the vault tree's right-click menus use —
-      # an older locked core fails at compile time, which is the good failure
-      # mode. The upper bound admits core 3.x, whose module-table-ownership
-      # model this module already fits (its own `migration_module/0` creates
-      # the `phoenix_kit_kb_*` tables; core 3.0 no longer creates module
-      # tables). Verified against 2.65.0 and 3.0.0.
-      pk_dep(:phoenix_kit, ">= 2.14.0 and < 4.0.0"),
+      # `>= 2.65.0 and < 4.0.0`. The floor is the oldest core this module is
+      # verified against, not the oldest it compiles against (2.14.0, for
+      # `FolderExplorer`'s `items`/`:item` and `<.context_menu>`). A floor that
+      # low is not inert: cores up to 2.22.20 declare leaf with an open ceiling
+      # (`~> 0.7`, i.e. `< 1.0.0`), while every core from 2.22.21 on caps it at
+      # the minor it was written against. So the moment Hex has a
+      # leaf newer than the newest core admits, `mix deps.update --all`
+      # resolves by backtracking core to 2.22.20 (and beamlab_countries and
+      # phoenix_kit_templates with it) — a "solution" nobody tested. With the
+      # floor here, leaf waits for core instead. The upper bound admits core
+      # 3.x, whose module-table-ownership model this module already fits (its
+      # own `migration_module/0` creates the `phoenix_kit_kb_*` tables; core
+      # 3.0 no longer creates module tables). Verified against 2.65.0 and
+      # 3.0.0; `mix test` (unit + integration) green against 3.4.0.
+      pk_dep(:phoenix_kit, ">= 2.65.0 and < 4.0.0"),
 
       # Markdown -> HTML for note rendering. Core already depends on MDEx and
       # pins the version; this constraint only has to agree with it.
