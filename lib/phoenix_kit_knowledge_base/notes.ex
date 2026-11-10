@@ -380,6 +380,12 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       For listings and link resolution, which need titles, paths, tags and
       dates and would otherwise read every note's whole text — a notes panel
       does that on every poll.
+    * `:property` — `{key, value}`: only notes whose front matter has
+      `key: value` at the top level. The value is compared as text (YAML
+      `7` matches `"7"`), so a host keeping an id in its notes' properties
+      finds them without querying this module's tables.
+    * `:has_property` — a key, or a list of keys: only notes whose front
+      matter has at least one of them.
   """
   @spec list_notes(String.t(), keyword()) :: [Note.t()]
   def list_notes(vault_uuid, opts \\ []) do
@@ -387,6 +393,8 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     |> filter_by_folder(Keyword.get(opts, :folder_path, :any))
     |> filter_by_subtree(Keyword.get(opts, :under))
     |> filter_by_tag(Keyword.get(opts, :tag))
+    |> filter_by_property(Keyword.get(opts, :property))
+    |> filter_by_has_property(Keyword.get(opts, :has_property))
     |> order_notes(Keyword.get(opts, :order, :title))
     |> maybe_limit(Keyword.get(opts, :limit))
     |> maybe_without_content(Keyword.get(opts, :content, true))
@@ -412,6 +420,39 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   defp filter_by_tag(query, nil), do: query
   defp filter_by_tag(query, tag), do: from(n in query, where: ^tag in n.tags)
+
+  defp filter_by_property(query, nil), do: query
+
+  defp filter_by_property(query, {key, value}) when is_binary(key) do
+    value = to_string(value)
+    from(n in query, where: fragment("?->>? = ?", n.frontmatter, ^key, ^value))
+  end
+
+  defp filter_by_has_property(query, nil), do: query
+
+  defp filter_by_has_property(query, key) when is_binary(key),
+    do: filter_by_has_property(query, [key])
+
+  defp filter_by_has_property(query, keys) when is_list(keys) do
+    from(n in query,
+      where: fragment("jsonb_exists_any(?, ?)", n.frontmatter, type(^keys, {:array, :string}))
+    )
+  end
+
+  @doc """
+  The first note (by path) whose front matter has `key: value`, or `nil`.
+  See `list_notes/2`'s `:property`.
+  """
+  @spec get_note_by_property(String.t(), String.t(), term()) :: Note.t() | nil
+  def get_note_by_property(vault_uuid, key, value) do
+    from(n in Note,
+      where: n.vault_uuid == ^vault_uuid,
+      order_by: [asc: n.relative_path],
+      limit: 1
+    )
+    |> filter_by_property({key, value})
+    |> repo().one()
+  end
 
   defp order_notes(query, :updated), do: from(n in query, order_by: [desc: n.updated_at])
 
@@ -544,13 +585,41 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   Refuses if a file is already at that path, rather than overwriting a note that
   the index may not even know about yet.
+
+  Options:
+
+    * `unique: true` — when the name is taken, number it instead of refusing:
+      `Ideas` → `Ideas 2` → `Ideas 3` … (the note's title is the file name,
+      so read it back from the returned note).
   """
-  @spec create_note(Vault.t(), map(), String.t() | nil) :: {:ok, Note.t()} | {:error, term()}
-  def create_note(%Vault{} = vault, attrs, actor_uuid \\ nil) do
+  @spec create_note(Vault.t(), map(), String.t() | nil, keyword()) ::
+          {:ok, Note.t()} | {:error, term()}
+  def create_note(%Vault{} = vault, attrs, actor_uuid \\ nil, opts \\ []) do
     title = Map.get(attrs, "title") || Map.get(attrs, :title)
     folder = Map.get(attrs, "folder_path") || Map.get(attrs, :folder_path) || ""
     content = Map.get(attrs, "content") || Map.get(attrs, :content) || ""
 
+    if Keyword.get(opts, :unique, false) do
+      title
+      |> numbered_titles()
+      |> Enum.find_value(
+        {:error, :too_many_duplicates},
+        &unless_taken(&1, vault, folder, content, actor_uuid)
+      )
+    else
+      write_new_note(vault, title, folder, content, actor_uuid)
+    end
+  end
+
+  # nil (try the next number) when the name is taken, else the result.
+  defp unless_taken(title, vault, folder, content, actor_uuid) do
+    case write_new_note(vault, title, folder, content, actor_uuid) do
+      {:error, :already_exists} -> nil
+      result -> result
+    end
+  end
+
+  defp write_new_note(vault, title, folder, content, actor_uuid) do
     with :ok <- check_text(content),
          {:ok, relative_path} <- build_note_path(title, folder),
          false <- Storage.note_exists?(vault.directory, relative_path),
@@ -595,24 +664,78 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   Links to the old name stop resolving and links waiting for the new one start,
   both handled here.
+
+  `unique: true` numbers the new name when it is taken in the folder
+  (`Ideas 2`), instead of refusing with `:target_exists`.
   """
   @spec rename_note(Vault.t(), Note.t(), String.t(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}
   def rename_note(%Vault{} = vault, %Note{} = note, new_title, opts \\ []) do
-    with {:ok, target} <- build_note_path(new_title, note.folder_path || ""),
+    with {:ok, target} <- target_path(vault, note, note.folder_path || "", new_title, opts),
          :ok <- move_and_reindex(vault, note, target, opts) do
       {:ok, get_note(vault.uuid, note.uuid)}
     end
   end
 
-  @doc "Move a note into another folder (`\"\"` = the vault root), moving its file."
+  @doc """
+  Move a note into another folder (`\"\"` = the vault root), moving its file.
+
+  Options:
+
+    * `title:` — rename it in the same step: one file move, so there is no
+      moment where the note sits renamed in the old folder (or moved under
+      its old name, colliding there).
+    * `unique: true` — number the name when it is taken in the target folder
+      (`Ideas 2`) instead of refusing with `:target_exists`.
+  """
   @spec move_note(Vault.t(), Note.t(), String.t(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}
   def move_note(%Vault{} = vault, %Note{} = note, folder_path, opts \\ []) do
+    title = Keyword.get(opts, :title) || Storage.title_from_path(note.relative_path)
+
     with {:ok, folder} <- safe_path(folder_path),
-         target <- Path.join(folder, Path.basename(note.relative_path)),
+         {:ok, target} <- target_path(vault, note, folder, title, opts),
          :ok <- move_and_reindex(vault, note, target, opts) do
       {:ok, get_note(vault.uuid, note.uuid)}
+    end
+  end
+
+  # Where a rename/move lands: `folder/title.md`, or with `unique: true` the
+  # first numbered variant that is free (the note's own current path counts
+  # as free — renaming `Ideas` to `Ideas` is a no-op, not `Ideas 2`).
+  defp target_path(vault, note, folder, title, opts) do
+    if Keyword.get(opts, :unique, false) do
+      free_path(vault, folder, title, note.relative_path)
+    else
+      build_note_path(title, folder)
+    end
+  end
+
+  @max_numbered 100
+
+  # `Ideas`, `Ideas 2`, `Ideas 3`, … — Pezu's and Obsidian's duplicate rule.
+  defp numbered_titles(title) do
+    Stream.map(1..@max_numbered, fn
+      1 -> title
+      n -> "#{title} #{n}"
+    end)
+  end
+
+  defp free_path(vault, folder, title, except_path) do
+    title
+    |> numbered_titles()
+    |> Enum.find_value(
+      {:error, :too_many_duplicates},
+      &free_candidate(&1, vault, folder, except_path)
+    )
+  end
+
+  # {:ok, path} when free, nil when taken (try the next), an error when the
+  # name itself is invalid (no number will fix that).
+  defp free_candidate(title, vault, folder, except_path) do
+    with {:ok, path} <- build_note_path(title, folder) do
+      if path == except_path or not Storage.note_exists?(vault.directory, path),
+        do: {:ok, path}
     end
   end
 
@@ -659,13 +782,37 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     end
   end
 
-  @doc "Everything in the vault's trash, newest first."
-  @spec list_trash(Vault.t()) :: [map()]
-  def list_trash(%Vault{} = vault) do
-    case Storage.list_trash(vault.directory) do
-      {:ok, entries} -> entries
-      {:error, _reason} -> []
-    end
+  @doc """
+  Everything in the vault's trash, newest first.
+
+  `frontmatter: true` adds each entry's parsed front matter (`%{}` for a
+  file without any, or one that is not markdown), so a host that binds notes
+  by a property — an `id:` — can find its trashed copy without reading the
+  trash itself.
+  """
+  @spec list_trash(Vault.t(), keyword()) :: [map()]
+  def list_trash(%Vault{} = vault, opts \\ []) do
+    entries =
+      case Storage.list_trash(vault.directory) do
+        {:ok, entries} -> entries
+        {:error, _reason} -> []
+      end
+
+    if Keyword.get(opts, :frontmatter, false),
+      do: Enum.map(entries, &put_trash_frontmatter(vault, &1)),
+      else: entries
+  end
+
+  defp put_trash_frontmatter(vault, entry) do
+    frontmatter =
+      with true <- String.ends_with?(entry.original_path, ".md"),
+           {:ok, content} <- Storage.read_note(vault.directory, entry.trash_path) do
+        content |> Markdown.split_frontmatter() |> elem(0)
+      else
+        _ -> %{}
+      end
+
+    Map.put(entry, :frontmatter, frontmatter)
   end
 
   @doc """
@@ -673,14 +820,33 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   Every link that was waiting for its title resolves again, which is the whole
   point of un-deleting rather than re-typing.
+
+  Refuses with `:target_exists` when a note has taken the old place since;
+  with `unique: true` it comes back numbered beside it instead (`Ideas 2`).
   """
-  @spec restore_note(Vault.t(), map()) :: {:ok, Note.t()} | {:error, term()}
-  def restore_note(%Vault{} = vault, %{trash_path: trash_path, original_path: original_path}) do
-    with :ok <- Storage.restore(vault.directory, trash_path, original_path),
+  @spec restore_note(Vault.t(), map(), keyword()) :: {:ok, Note.t()} | {:error, term()}
+  def restore_note(vault, entry, opts \\ [])
+
+  def restore_note(
+        %Vault{} = vault,
+        %{trash_path: trash_path, original_path: original_path},
+        opts
+      ) do
+    with {:ok, original_path} <- restore_target(vault, original_path, opts),
+         :ok <- Storage.restore(vault.directory, trash_path, original_path),
          {:ok, stat} <- Storage.stat_note(vault.directory, original_path),
          {:ok, note} <- index_entry(vault, original_path, stat) do
       Links.reresolve_for_note(note)
       {:ok, note}
+    end
+  end
+
+  defp restore_target(vault, original_path, opts) do
+    if Keyword.get(opts, :unique, false) and String.ends_with?(original_path, ".md") do
+      folder = original_path |> Path.dirname() |> then(&if(&1 == ".", do: "", else: &1))
+      free_path(vault, folder, Storage.title_from_path(original_path), nil)
+    else
+      {:ok, original_path}
     end
   end
 
@@ -845,6 +1011,82 @@ defmodule PhoenixKitKnowledgeBase.Notes do
           )
         )
     end
+  end
+
+  # Private-use code points as the match markers: they cannot occur in what
+  # a person typed into a note by accident, and ts_headline copies them as is.
+  @snippet_start "\u{E000}"
+  @snippet_stop "\u{E001}"
+
+  @doc """
+  `search/3`, with a snippet of each note showing where it matched.
+
+  Returns `[%{note: note, snippet: segments}]`, best match first, where
+  `segments` is a list of `{:text, binary}` and `{:match, binary}` pieces of
+  the note's body around the matched words (Postgres `ts_headline`, with the
+  front matter left out). Segments rather than HTML, so the host renders and
+  escapes them its own way: nothing from a note's text reaches a page
+  unescaped through this.
+
+  Options: `:limit` (default 50), `:words` (the snippet's length, default 18).
+  """
+  @spec search_with_snippets(String.t(), String.t(), keyword()) :: [
+          %{note: Note.t(), snippet: [{:text | :match, String.t()}]}
+        ]
+  def search_with_snippets(vault_uuid, term, opts \\ []) do
+    case String.trim(term || "") do
+      "" ->
+        []
+
+      trimmed ->
+        limit = Keyword.get(opts, :limit, 50)
+        words = opts |> Keyword.get(:words, 18) |> max(3) |> min(60)
+
+        options =
+          "StartSel=#{@snippet_start}, StopSel=#{@snippet_stop}, MaxWords=#{words}, MinWords=#{min(5, words)}, MaxFragments=1"
+
+        repo().all(
+          from(n in Note,
+            where: n.vault_uuid == ^vault_uuid,
+            where: fragment("search_vector @@ websearch_to_tsquery('english', ?)", ^trimmed),
+            order_by: [
+              desc:
+                fragment("ts_rank(search_vector, websearch_to_tsquery('english', ?))", ^trimmed),
+              asc: n.title
+            ],
+            limit: ^limit,
+            select:
+              {n,
+               fragment(
+                 "ts_headline('english', regexp_replace(?, '\\A---\\n.*\\?\\n---\\n', ''), websearch_to_tsquery('english', ?), ?)",
+                 n.content,
+                 ^trimmed,
+                 ^options
+               )}
+          )
+        )
+        |> Enum.map(fn {note, headline} -> %{note: note, snippet: snippet_segments(headline)} end)
+    end
+  end
+
+  defp snippet_segments(nil), do: []
+
+  defp snippet_segments(headline) do
+    headline
+    |> String.split(@snippet_start)
+    |> Enum.with_index()
+    |> Enum.flat_map(fn
+      {piece, 0} ->
+        [{:text, piece}]
+
+      {piece, _} ->
+        case String.split(piece, @snippet_stop, parts: 2) do
+          [match, rest] -> [{:match, match}, {:text, rest}]
+          [text] -> [{:text, text}]
+        end
+    end)
+    |> Enum.map(fn {kind, text} -> {kind, String.replace(text, ~r/\s+/, " ")} end)
+    |> Enum.reject(fn {_kind, text} -> text == "" end)
   end
 
   @doc """

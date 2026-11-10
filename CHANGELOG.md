@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`notes_panel` edits on today's PhoenixKit.** Without a Leaf that supports
+  `notify` (0.11; core 3.4.0 caps Leaf at 0.10) the drop-in panel used to show
+  notes read-only. It now edits them in a plain markdown textarea: autosave,
+  the stale-write guard with its "Take theirs / Keep mine" choice, read-only
+  without `:edit` access, and a debounced change for a note no longer open is
+  dropped. With Leaf 0.11 the Leaf editor takes over, unchanged.
+
+- **Search snippets:** `search_with_snippets/3` returns each match with a
+  snippet of its body around the matched words (`ts_headline`, front matter
+  left out), as `{:text, _}` / `{:match, _}` segments for the host to render
+  and escape itself.
+
+- **Numbered names on demand.** `create_note/4`, `rename_note/4`,
+  `move_note/4` and `restore_note/3` take `unique: true`: a name already taken
+  becomes `Ideas 2`, `Ideas 3`, … instead of `:already_exists` /
+  `:target_exists` (Obsidian's rule). The note's own current path counts as
+  free, so renaming a note to its own name stays a no-op. Past 100 the answer
+  is `:too_many_duplicates`, with its own message.
+- **Rename and move in one step:** `move_note/4` takes `title:`. One file move,
+  so the note is never briefly renamed in the old folder or moved under a name
+  that collides there.
+- **A trash a host can search:** `list_trash/2` with `frontmatter: true` adds
+  each entry's parsed front matter, so a host that binds notes by a property
+  (an `id:`) finds its trashed copy without reading `.trash/` itself.
+- **Notes by front-matter property:** `list_notes/2` takes `property: {key,
+  value}` (compared as text) and `has_property: key | [keys]`, and
+  `get_note_by_property/3` returns the first match, so hosts stop querying
+  `frontmatter` in this module's tables with their own SQL.
+
 - **Right-click menus on the vault tree.** Folders offer Rename and Move to
   trash, notes offer Open and Move to trash; touch-and-hold does the same on a
   phone, and the menu names the row it was opened on. Core's explorer already

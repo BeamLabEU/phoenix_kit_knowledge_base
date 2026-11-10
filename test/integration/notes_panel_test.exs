@@ -479,14 +479,63 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert Notes.list_notes(vault.uuid) == []
     end
 
-    test "without a Leaf that supports notify, the note is shown and no editor is mounted",
-         %{conn: conn, me: me, note: note} do
+    test "without a Leaf that supports notify, a plain markdown editor edits in place",
+         %{conn: conn, me: me, vault: vault, note: note} do
       Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, false)
+      on_exit(fn -> Application.delete_env(:phoenix_kit_knowledge_base, :leaf_notify) end)
+
       {:ok, lv, _} = mount_panel(conn, me)
       html = fire(lv, "open_note", %{"uuid" => note.uuid})
-      assert html =~ "needs Leaf 0.11"
-      assert html =~ "before"
       refute html =~ NotesPanel.editor_id("panel", note)
+      assert has_element?(lv, "#panel-plain-#{note.uuid}", "before")
+      assert html =~ "Saved as you type"
+
+      # What the textarea sends (browsers use CRLF).
+      html =
+        lv
+        |> form("#panel-plain-form", %{"note" => note.uuid, "content" => "line one\r\nline two"})
+        |> render_change()
+
+      assert file(vault, note) == "line one\nline two"
+      assert html =~ "Saved"
+    end
+
+    test "the plain editor drops a late change for a note no longer open, and keeps the guard",
+         %{conn: conn, me: me, vault: vault, note: note} do
+      Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, false)
+      on_exit(fn -> Application.delete_env(:phoenix_kit_knowledge_base, :leaf_notify) end)
+      {_vault, other} = note!(me, "Other note", @path, :shared, "other")
+
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      # A debounced change naming another note: ignored.
+      fire(lv, "plain_edit", %{"note" => other.uuid, "content" => "wrong"})
+      assert file(vault, note) == "before"
+      assert file(vault, other) == "other"
+
+      # Someone else's save, straight to disk: not overwritten until chosen.
+      {:ok, _} = Storage.write_note(vault.directory, note.relative_path, "theirs")
+      html = fire(lv, "plain_edit", %{"note" => note.uuid, "content" => "mine"})
+      assert html =~ "changed somewhere else"
+      assert file(vault, note) == "theirs"
+
+      fire(lv, "overwrite_note")
+      assert file(vault, note) == "mine"
+    end
+
+    test "the plain editor is read-only, and refuses, for view-only access",
+         %{conn: conn, me: me, other: other, vault: vault, note: note} do
+      Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, false)
+      on_exit(fn -> Application.delete_env(:phoenix_kit_knowledge_base, :leaf_notify) end)
+      Application.put_env(:phoenix_kit_knowledge_base, :authorize, {Hooks, :view_only})
+
+      {:ok, lv, _} = mount_panel(conn, other)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      assert has_element?(lv, "#panel-plain-#{note.uuid}[readonly]")
+
+      fire(lv, "plain_edit", %{"note" => note.uuid, "content" => "forged"})
+      assert file(vault, note) == "before"
     end
 
     test "a note moved out of the folder is let go of, not followed", %{

@@ -230,10 +230,13 @@ one `CRM` vault with a folder per client.
   create it there.
 - **Admins** (the `knowledge_base` permission and a role on the vault) also get
   a link to the whole vault on the admin pages.
-- **Needs Leaf 0.11** (its `notify` option) to edit in place. With an older Leaf
-  the panel shows notes read-only rather than send the editor's messages to
-  your page. Which Leaf you get is capped by `phoenix_kit`'s own requirement,
-  so this also needs a core that admits 0.11 — 3.4.0 stops at 0.10.
+- **The editor.** With Leaf 0.11 (its `notify` option) the panel edits with
+  Leaf: formatting, `[[`/`#` autocomplete. With an older Leaf — which Leaf you
+  get is capped by `phoenix_kit`'s own requirement, and 3.4.0 stops at 0.10 —
+  it edits with a plain markdown textarea instead: the same autosave, the same
+  guard against overwriting a change made elsewhere (and the same "Take
+  theirs / Keep mine" choice), read-only without edit access. It never sends
+  the editor's messages to your page either way.
 
 The panel polls (`poll`, default 5 s) because a component cannot subscribe to
 anything, and shows every message inline. See `PhoenixKitKnowledgeBase.Web.NotesPanel`.
@@ -325,7 +328,7 @@ inline while the source markers stay editable. Edits autosave.
 
 Until Leaf renders `[[wiki-links]]` they are literal text in the editor; the
 right-hand panel lists a note's outgoing links so navigation does not depend on
-it. See [the Leaf spec](dev_docs/2026-08-25-leaf-collaboration-spec.md).
+it. See [the Leaf spec](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/blob/main/dev_docs/2026-08-25-leaf-collaboration-spec.md).
 
 **Visual and HTML modes are denied.** Both round-trip the document through HTML,
 and YAML front matter is `---`-delimited — which survives that trip as a
@@ -427,7 +430,7 @@ Each a clean addition later; none needs a schema change:
   `git init` in it gives you exactly that.
 - **Collaborative editing.** Concurrent edits to one note are detected, not
   merged. The route to Google-Docs-style editing is mapped out in
-  [the Leaf spec](dev_docs/2026-08-25-leaf-collaboration-spec.md): `y_ex` holds the CRDT
+  [the Leaf spec](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/blob/main/dev_docs/2026-08-25-leaf-collaboration-spec.md): `y_ex` holds the CRDT
   server-side, Postgres holds it while a note is open, and the `.md` file is
   flushed on a timer — files are deliberately not real-time. The blocker is
   Leaf needing a document model, not the CRDT layer.
@@ -498,12 +501,12 @@ Working material lives in `dev_docs/`, date-prefixed:
 
 | Document | What it is |
 |---|---|
-| [`2026-08-25-knowledge-base-goals.md`](dev_docs/2026-08-25-knowledge-base-goals.md) | The brief, the founding decisions and the reasoning behind them |
-| [`2026-08-25-leaf-collaboration-spec.md`](dev_docs/2026-08-25-leaf-collaboration-spec.md) | What Leaf needs for multi-user editing, staged |
-| [`reports/`](dev_docs/reports) | Dated progress reports |
-| [`reviews/`](dev_docs/reviews) | Dated module reviews — what was checked, what was fixed, what is still open |
+| [`2026-08-25-knowledge-base-goals.md`](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/blob/main/dev_docs/2026-08-25-knowledge-base-goals.md) | The brief, the founding decisions and the reasoning behind them |
+| [`2026-08-25-leaf-collaboration-spec.md`](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/blob/main/dev_docs/2026-08-25-leaf-collaboration-spec.md) | What Leaf needs for multi-user editing, staged |
+| [`reports/`](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/tree/main/dev_docs/reports) | Dated progress reports |
+| [`reviews/`](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/tree/main/dev_docs/reviews) | Dated module reviews — what was checked, what was fixed, what is still open |
 
-[`AGENTS.md`](AGENTS.md) is the contributor guide — the invariants, the
+[`AGENTS.md`](https://github.com/BeamLabEU/phoenix_kit_knowledge_base/blob/main/AGENTS.md) is the contributor guide — the invariants, the
 verification layers and every gotcha that has already cost time. `CLAUDE.md`
 symlinks to it. None of this ships in the Hex package.
 
