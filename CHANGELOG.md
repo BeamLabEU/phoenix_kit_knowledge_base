@@ -5,7 +5,13 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.0] - 2026-11-10
+
+First release. Notes are markdown files on disk; Postgres indexes them.
+
+0.1.0 was drafted on 2026-08-25 but not published then. The sections below
+are what changed after that draft; the draft's own list, which describes the
+foundations, follows under its date.
 
 ### Added
 
@@ -215,9 +221,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed `Links.unresolve_stale/1` — dead code: rename and move already
   re-resolve through `Links.reresolve_keys/2`, which covers both directions.
 
-## [0.1.0] - 2026-08-25
-
-First release. Notes are markdown files on disk; Postgres indexes them.
+## 0.1.0 draft - 2026-08-25 (not published)
 
 ### Added
 
