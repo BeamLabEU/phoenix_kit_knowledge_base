@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`notes_panel` edits on today's PhoenixKit.** Without a Leaf that supports
+  `notify` (0.11; core 3.4.0 caps Leaf at 0.10) the drop-in panel used to show
+  notes read-only. It now edits them in a plain markdown textarea: autosave,
+  the stale-write guard with its "Take theirs / Keep mine" choice, read-only
+  without `:edit` access, and a debounced change for a note no longer open is
+  dropped. With Leaf 0.11 the Leaf editor takes over, unchanged.
+
 - **Search snippets:** `search_with_snippets/3` returns each match with a
   snippet of its body around the matched words (`ts_headline`, front matter
   left out), as `{:text, _}` / `{:match, _}` segments for the host to render

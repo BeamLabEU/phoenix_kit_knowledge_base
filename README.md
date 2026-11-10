@@ -230,10 +230,13 @@ one `CRM` vault with a folder per client.
   create it there.
 - **Admins** (the `knowledge_base` permission and a role on the vault) also get
   a link to the whole vault on the admin pages.
-- **Needs Leaf 0.11** (its `notify` option) to edit in place. With an older Leaf
-  the panel shows notes read-only rather than send the editor's messages to
-  your page. Which Leaf you get is capped by `phoenix_kit`'s own requirement,
-  so this also needs a core that admits 0.11 — 3.4.0 stops at 0.10.
+- **The editor.** With Leaf 0.11 (its `notify` option) the panel edits with
+  Leaf: formatting, `[[`/`#` autocomplete. With an older Leaf — which Leaf you
+  get is capped by `phoenix_kit`'s own requirement, and 3.4.0 stops at 0.10 —
+  it edits with a plain markdown textarea instead: the same autosave, the same
+  guard against overwriting a change made elsewhere (and the same "Take
+  theirs / Keep mine" choice), read-only without edit access. It never sends
+  the editor's messages to your page either way.
 
 The panel polls (`poll`, default 5 s) because a component cannot subscribe to
 anything, and shows every message inline. See `PhoenixKitKnowledgeBase.Web.NotesPanel`.

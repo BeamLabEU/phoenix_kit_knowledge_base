@@ -435,11 +435,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
         fresh ->
-          send_update(Leaf,
-            id: editor_id(socket.assigns.id, fresh),
-            action: :set_content,
-            content: fresh.content || ""
-          )
+          refresh_editor(socket, fresh)
 
           socket
           |> assign(:note, fresh)
@@ -458,6 +454,30 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     with_open_note(socket, :edit, fn socket, _vault, _note ->
       save(socket, socket.assigns.content, force: true)
     end)
+  end
+
+  # The plain editor (no Leaf `notify`): what Leaf's `:leaf_changed` does,
+  # from a textarea. The note it names must be the one open — a debounced
+  # change can arrive after switching notes — and access is asked again.
+  def handle_event("plain_edit", %{"note" => uuid, "content" => markdown}, socket)
+      when is_binary(uuid) and is_binary(markdown) do
+    # Browsers send a textarea's line breaks as CRLF.
+    markdown = String.replace(markdown, "\r\n", "\n")
+    %{note: note, place: place, user: user, content: current} = socket.assigns
+
+    cond do
+      is_nil(note) or note.uuid != uuid or markdown == current ->
+        {:noreply, socket}
+
+      place && Places.authorize(:edit, user, place) ->
+        {:noreply, socket |> assign(:content, markdown) |> save(markdown)}
+
+      true ->
+        {:noreply,
+         socket
+         |> assign(:save_status, :unsaved)
+         |> notice(:error, gettext("You cannot change these notes."))}
+    end
   end
 
   def handle_event("dismiss", _params, socket), do: {:noreply, assign(socket, :notice, nil)}
@@ -683,6 +703,20 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # Mode changes, focus, and anything a later Leaf adds: nothing to do, and an
   # unmatched clause would take the host's page down.
   defp handle_leaf(_message, socket), do: socket
+
+  # A note reloaded under the open editor. The plain editor re-renders from
+  # `content`; only Leaf, whose surface LiveView never patches, needs telling.
+  defp refresh_editor(socket, fresh) do
+    if leaf_notify?() do
+      send_update(Leaf,
+        id: editor_id(socket.assigns.id, fresh),
+        action: :set_content,
+        content: fresh.content || ""
+      )
+    end
+
+    :ok
+  end
 
   defp save(socket, content, opts \\ []) do
     %{vault: vault, note: note, user: user} = socket.assigns
@@ -1122,12 +1156,33 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         </button>
       </div>
 
-      <div :if={not leaf_notify?()} class="space-y-2">
-        <p class="text-xs text-base-content/60">
-          {gettext("Editing here needs Leaf 0.11 or later; this is the note as saved.")}
+      <%!-- Without a Leaf that can talk to this component (notify, 0.11),
+           a plain markdown editor: the same autosave, the same stale guard
+           and conflict choice, the same access checks. Formatting toolbar
+           and [[ / # suggestions are Leaf's, so they wait for it. --%>
+      <.form
+        :if={not leaf_notify?()}
+        for={%{}}
+        id={"#{@id}-plain-form"}
+        phx-change="plain_edit"
+        phx-submit="plain_edit"
+        phx-target={@myself}
+        class="space-y-1"
+      >
+        <input type="hidden" name="note" value={@note.uuid} />
+        <textarea
+          id={"#{@id}-plain-#{@note.uuid}"}
+          name="content"
+          rows="12"
+          phx-debounce="700"
+          readonly={not @can_edit?}
+          placeholder={gettext("Write here. Link with [[Note title]], tag with #tag.")}
+          class="textarea w-full font-mono text-sm leading-relaxed"
+        >{Phoenix.HTML.Form.normalize_value("textarea", @content)}</textarea>
+        <p class="text-xs text-base-content/50">
+          {gettext("Markdown. Saved as you type.")}
         </p>
-        <pre class="whitespace-pre-wrap break-words text-sm rounded-box bg-base-200 p-3">{@content}</pre>
-      </div>
+      </.form>
 
       <.live_component
         :if={leaf_notify?()}
