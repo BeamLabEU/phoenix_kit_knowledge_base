@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Search snippets:** `search_with_snippets/3` returns each match with a
+  snippet of its body around the matched words (`ts_headline`, front matter
+  left out), as `{:text, _}` / `{:match, _}` segments for the host to render
+  and escape itself.
+
 - **Numbered names on demand.** `create_note/4`, `rename_note/4`,
   `move_note/4` and `restore_note/3` take `unique: true`: a name already taken
   becomes `Ideas 2`, `Ideas 3`, … instead of `:already_exists` /

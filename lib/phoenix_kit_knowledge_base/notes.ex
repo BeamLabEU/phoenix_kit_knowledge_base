@@ -1013,6 +1013,82 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     end
   end
 
+  # Private-use code points as the match markers: they cannot occur in what
+  # a person typed into a note by accident, and ts_headline copies them as is.
+  @snippet_start "\u{E000}"
+  @snippet_stop "\u{E001}"
+
+  @doc """
+  `search/3`, with a snippet of each note showing where it matched.
+
+  Returns `[%{note: note, snippet: segments}]`, best match first, where
+  `segments` is a list of `{:text, binary}` and `{:match, binary}` pieces of
+  the note's body around the matched words (Postgres `ts_headline`, with the
+  front matter left out). Segments rather than HTML, so the host renders and
+  escapes them its own way: nothing from a note's text reaches a page
+  unescaped through this.
+
+  Options: `:limit` (default 50), `:words` (the snippet's length, default 18).
+  """
+  @spec search_with_snippets(String.t(), String.t(), keyword()) :: [
+          %{note: Note.t(), snippet: [{:text | :match, String.t()}]}
+        ]
+  def search_with_snippets(vault_uuid, term, opts \\ []) do
+    case String.trim(term || "") do
+      "" ->
+        []
+
+      trimmed ->
+        limit = Keyword.get(opts, :limit, 50)
+        words = opts |> Keyword.get(:words, 18) |> max(3) |> min(60)
+
+        options =
+          "StartSel=#{@snippet_start}, StopSel=#{@snippet_stop}, MaxWords=#{words}, MinWords=#{min(5, words)}, MaxFragments=1"
+
+        repo().all(
+          from(n in Note,
+            where: n.vault_uuid == ^vault_uuid,
+            where: fragment("search_vector @@ websearch_to_tsquery('english', ?)", ^trimmed),
+            order_by: [
+              desc:
+                fragment("ts_rank(search_vector, websearch_to_tsquery('english', ?))", ^trimmed),
+              asc: n.title
+            ],
+            limit: ^limit,
+            select:
+              {n,
+               fragment(
+                 "ts_headline('english', regexp_replace(?, '\\A---\\n.*\\?\\n---\\n', ''), websearch_to_tsquery('english', ?), ?)",
+                 n.content,
+                 ^trimmed,
+                 ^options
+               )}
+          )
+        )
+        |> Enum.map(fn {note, headline} -> %{note: note, snippet: snippet_segments(headline)} end)
+    end
+  end
+
+  defp snippet_segments(nil), do: []
+
+  defp snippet_segments(headline) do
+    headline
+    |> String.split(@snippet_start)
+    |> Enum.with_index()
+    |> Enum.flat_map(fn
+      {piece, 0} ->
+        [{:text, piece}]
+
+      {piece, _} ->
+        case String.split(piece, @snippet_stop, parts: 2) do
+          [match, rest] -> [{:match, match}, {:text, rest}]
+          [text] -> [{:text, text}]
+        end
+    end)
+    |> Enum.map(fn {kind, text} -> {kind, String.replace(text, ~r/\s+/, " ")} end)
+    |> Enum.reject(fn {_kind, text} -> text == "" end)
+  end
+
   @doc """
   Title-prefix search, for the `[[` link picker and the quick switcher.
 

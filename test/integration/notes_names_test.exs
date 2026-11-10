@@ -146,4 +146,34 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesNamesTest do
       assert Notes.list_notes(vault.uuid, has_property: "id") == []
     end
   end
+
+  describe "search_with_snippets/3" do
+    test "marks the matched words in context, leaves the front matter out", %{vault: vault} do
+      create(
+        vault,
+        "Trip",
+        "",
+        "---\nid: tyres-123\n---\n# Trip\n\nBefore winter, ask the garage about new tyres <b>soon</b>.\n"
+      )
+
+      create(vault, "Other", "", "Nothing about cars here.")
+
+      assert [%{note: %{title: "Trip"}, snippet: snippet}] =
+               Notes.search_with_snippets(vault.uuid, "tyres")
+
+      assert {:match, "tyres"} in snippet
+      text = Enum.map_join(snippet, fn {_kind, piece} -> piece end)
+      assert text =~ "ask the garage about new"
+      refute text =~ "tyres-123"
+      # ts_headline drops HTML tags and keeps their words; whatever text is
+      # left still goes to the host as segments, to escape its own way.
+      assert text =~ "soon"
+      refute text =~ "<b>"
+    end
+
+    test "an empty term finds nothing", %{vault: vault} do
+      create(vault, "A", "", "words")
+      assert Notes.search_with_snippets(vault.uuid, "  ") == []
+    end
+  end
 end
