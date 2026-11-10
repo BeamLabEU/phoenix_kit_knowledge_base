@@ -6,7 +6,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesNamesTest do
   """
   use PhoenixKitKnowledgeBase.DataCase
 
-  alias PhoenixKitKnowledgeBase.{Notes, Places, Vaults}
+  alias PhoenixKitKnowledgeBase.{Notes, Places, Rescan, Vaults}
 
   setup do
     user = user_fixture()
@@ -21,6 +21,16 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesNamesTest do
   end
 
   defp on_disk?(vault, path), do: File.exists?(Path.join(Vaults.absolute_path(vault), path))
+
+  # A note that came from disk, under a name `validate_filename/1` would refuse
+  # for a create — an Obsidian vault's `Meeting #3.md`.
+  defp from_disk(vault, path, content \\ "text") do
+    full = Path.join(Vaults.absolute_path(vault), path)
+    File.mkdir_p!(Path.dirname(full))
+    File.write!(full, content)
+    {:ok, _} = Rescan.run(vault)
+    Notes.get_note_by_path(vault.uuid, path)
+  end
 
   describe "create_note/4 with unique: true" do
     test "numbers a taken name instead of refusing", %{vault: vault, user: user} do
@@ -88,6 +98,44 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesNamesTest do
 
       assert {:ok, %{relative_path: "work/Report 2.md"}} =
                Notes.move_note(vault, note, "work", title: "Report 2", unique: true)
+    end
+  end
+
+  describe "a name the file already has is kept verbatim" do
+    test "move_note/4 without title: moves a name a create would refuse", %{vault: vault} do
+      note = from_disk(vault, "inbox/Meeting #3.md")
+
+      assert {:ok, %{relative_path: "work/Meeting #3.md"}} = Notes.move_note(vault, note, "work")
+      assert on_disk?(vault, "work/Meeting #3.md")
+    end
+
+    test "move_note/4 with unique: numbers it verbatim, extension case and all", %{vault: vault} do
+      from_disk(vault, "work/Meeting #3.md")
+      note = from_disk(vault, "inbox/Meeting #3.md")
+      upper = from_disk(vault, "inbox/Loud.MD")
+
+      assert {:ok, %{relative_path: "work/Meeting #3 2.md"}} =
+               Notes.move_note(vault, note, "work", unique: true)
+
+      assert {:ok, %{relative_path: "work/Loud.MD"}} = Notes.move_note(vault, upper, "work")
+    end
+
+    test "a new title: is still validated", %{vault: vault} do
+      note = from_disk(vault, "inbox/Meeting #3.md")
+
+      assert {:error, {:forbidden_characters, _}} =
+               Notes.move_note(vault, note, "work", title: "Meeting #4")
+    end
+
+    test "restore_note/3 with unique: numbers a name a create would refuse", %{vault: vault} do
+      note = from_disk(vault, "Meeting #3.md", "old")
+      {:ok, _} = Notes.delete_note(vault, note)
+      from_disk(vault, "Meeting #3.md", "new")
+
+      [entry] = Notes.list_trash(vault)
+
+      assert {:ok, %{relative_path: "Meeting #3 2.md", content: "old"}} =
+               Notes.restore_note(vault, entry, unique: true)
     end
   end
 
@@ -169,6 +217,46 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesNamesTest do
       # left still goes to the host as segments, to escape its own way.
       assert text =~ "soon"
       refute text =~ "<b>"
+    end
+
+    test "any :words in range is a valid ts_headline", %{vault: vault} do
+      create(vault, "Trip", "", "one two three four five six seven tyres eight nine ten")
+
+      for words <- [1, 3, 4, 5, 6, 60, 500] do
+        assert [%{snippet: snippet}] =
+                 Notes.search_with_snippets(vault.uuid, "tyres", words: words)
+
+        assert {:match, "tyres"} in snippet
+      end
+    end
+
+    test "front matter goes, body rules stay", %{vault: vault} do
+      # CRLF front matter, then a body with `---` rules in it: only the front
+      # matter is cut, not everything up to the last rule.
+      create(
+        vault,
+        "Crlf",
+        "",
+        "---\r\nid: secretid\r\n---\r\nalpha tyres\r\n\r\n---\r\nomega\r\n"
+      )
+
+      # No front matter, but the body opens with a rule: nothing is cut.
+      create(vault, "Rule", "", "---\nleading words tyres\n\n---\ntail\n")
+
+      text = fn title ->
+        vault.uuid
+        |> Notes.search_with_snippets("tyres", words: 60)
+        |> Enum.find(&(&1.note.title == title))
+        |> Map.fetch!(:snippet)
+        |> Enum.map_join(fn {_kind, piece} -> piece end)
+      end
+
+      crlf = text.("Crlf")
+      assert crlf =~ "alpha"
+      assert crlf =~ "omega"
+      refute crlf =~ "secretid"
+
+      assert text.("Rule") =~ "leading words"
     end
 
     test "an empty term finds nothing", %{vault: vault} do

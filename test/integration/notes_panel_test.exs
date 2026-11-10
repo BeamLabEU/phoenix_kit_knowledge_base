@@ -525,7 +525,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     end
 
     test "the plain editor is read-only, and refuses, for view-only access",
-         %{conn: conn, me: me, other: other, vault: vault, note: note} do
+         %{conn: conn, other: other, vault: vault, note: note} do
       Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, false)
       on_exit(fn -> Application.delete_env(:phoenix_kit_knowledge_base, :leaf_notify) end)
       Application.put_env(:phoenix_kit_knowledge_base, :authorize, {Hooks, :view_only})

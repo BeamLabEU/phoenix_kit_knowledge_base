@@ -423,7 +423,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   defp filter_by_property(query, nil), do: query
 
-  defp filter_by_property(query, {key, value}) when is_binary(key) do
+  # A scalar only: `->>` gives a nested list or map back as JSON text, which no
+  # `to_string/1` of an Elixir term reproduces.
+  defp filter_by_property(query, {key, value})
+       when is_binary(key) and not is_list(value) and not is_map(value) do
     value = to_string(value)
     from(n in query, where: fragment("?->>? = ?", n.frontmatter, ^key, ^value))
   end
@@ -580,6 +583,9 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   # ── Notes: writes ─────────────────────────────────────────────────────────
 
+  # How far `unique: true` counts before giving up (`:too_many_duplicates`).
+  @max_numbered 100
+
   @doc """
   Create a note: write the file, then index what landed.
 
@@ -600,11 +606,10 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     content = Map.get(attrs, "content") || Map.get(attrs, :content) || ""
 
     if Keyword.get(opts, :unique, false) do
-      title
-      |> numbered_titles()
-      |> Enum.find_value(
+      Enum.find_value(
+        1..@max_numbered,
         {:error, :too_many_duplicates},
-        &unless_taken(&1, vault, folder, content, actor_uuid)
+        &unless_taken(numbered(title, &1), vault, folder, content, actor_uuid)
       )
     else
       write_new_note(vault, title, folder, content, actor_uuid)
@@ -691,53 +696,72 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   @spec move_note(Vault.t(), Note.t(), String.t(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}
   def move_note(%Vault{} = vault, %Note{} = note, folder_path, opts \\ []) do
-    title = Keyword.get(opts, :title) || Storage.title_from_path(note.relative_path)
-
     with {:ok, folder} <- safe_path(folder_path),
-         {:ok, target} <- target_path(vault, note, folder, title, opts),
+         {:ok, target} <- move_target(vault, note, folder, opts),
          :ok <- move_and_reindex(vault, note, target, opts) do
       {:ok, get_note(vault.uuid, note.uuid)}
     end
   end
 
-  # Where a rename/move lands: `folder/title.md`, or with `unique: true` the
-  # first numbered variant that is free (the note's own current path counts
-  # as free — renaming `Ideas` to `Ideas` is a no-op, not `Ideas 2`).
-  defp target_path(vault, note, folder, title, opts) do
-    if Keyword.get(opts, :unique, false) do
-      free_path(vault, folder, title, note.relative_path)
-    else
-      build_note_path(title, folder)
+  # A new title is validated like a create; without one the file keeps the
+  # name it has, verbatim.
+  defp move_target(vault, note, folder, opts) do
+    case Keyword.get(opts, :title) do
+      nil ->
+        name_at = kept_name(folder, Path.basename(note.relative_path))
+        first_free(vault, name_at, note.relative_path, opts)
+
+      title ->
+        target_path(vault, note, folder, title, opts)
     end
   end
 
-  @max_numbered 100
+  # Where a rename lands: `folder/title.md`, or with `unique: true` the first
+  # numbered variant that is free (the note's own current path counts as free
+  # — renaming `Ideas` to `Ideas` is a no-op, not `Ideas 2`).
+  defp target_path(vault, note, folder, title, opts) do
+    first_free(vault, typed_name(folder, title), note.relative_path, opts)
+  end
 
   # `Ideas`, `Ideas 2`, `Ideas 3`, … — Pezu's and Obsidian's duplicate rule.
-  defp numbered_titles(title) do
-    Stream.map(1..@max_numbered, fn
-      1 -> title
-      n -> "#{title} #{n}"
-    end)
+  defp numbered(name, 1), do: name
+  defp numbered(name, n), do: "#{name} #{n}"
+
+  # A name a person typed: validated like a create, so an invalid one is
+  # refused whatever number it carries.
+  defp typed_name(folder, title), do: &build_note_path(numbered(title, &1), folder)
+
+  # A name the file already has — a move without `title:`, a restore — is kept
+  # verbatim, the way indexing accepted it: `Meeting #3.md` from an Obsidian
+  # vault is a note here, and `validate_filename/1` would refuse to move it.
+  # The extension keeps its case too (`Note.MD` stays `Note.MD`).
+  defp kept_name(folder, basename) do
+    stem = Storage.drop_extension(basename)
+    ext = binary_part(basename, byte_size(stem), byte_size(basename) - byte_size(stem))
+    fn n -> {:ok, Path.join(folder, numbered(stem, n) <> ext)} end
   end
 
-  defp free_path(vault, folder, title, except_path) do
-    title
-    |> numbered_titles()
-    |> Enum.find_value(
-      {:error, :too_many_duplicates},
-      &free_candidate(&1, vault, folder, except_path)
-    )
-  end
-
-  # {:ok, path} when free, nil when taken (try the next), an error when the
-  # name itself is invalid (no number will fix that).
-  defp free_candidate(title, vault, folder, except_path) do
-    with {:ok, path} <- build_note_path(title, folder) do
-      if path == except_path or not Storage.note_exists?(vault.directory, path),
-        do: {:ok, path}
+  # `name_at.(1)`, or with `unique: true` the first numbered path that is free
+  # (or is `except_path`). A name that is invalid stops the search: no number
+  # will fix it.
+  defp first_free(vault, name_at, except_path, opts) do
+    if Keyword.get(opts, :unique, false) do
+      Enum.find_value(
+        1..@max_numbered,
+        {:error, :too_many_duplicates},
+        &free_or_nil(vault, name_at.(&1), except_path)
+      )
+    else
+      name_at.(1)
     end
   end
+
+  # {:ok, path} when free, nil when taken (try the next), an error as is.
+  defp free_or_nil(vault, {:ok, path}, except_path) do
+    if path == except_path or not Storage.note_exists?(vault.directory, path), do: {:ok, path}
+  end
+
+  defp free_or_nil(_vault, error, _except_path), do: error
 
   defp move_and_reindex(vault, note, target, opts) do
     if target == note.relative_path do
@@ -805,7 +829,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
 
   defp put_trash_frontmatter(vault, entry) do
     frontmatter =
-      with true <- String.ends_with?(entry.original_path, ".md"),
+      with true <- markdown_path?(entry.original_path),
            {:ok, content} <- Storage.read_note(vault.directory, entry.trash_path) do
         content |> Markdown.split_frontmatter() |> elem(0)
       else
@@ -841,14 +865,19 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     end
   end
 
+  # The name it had, verbatim (it may predate `validate_filename/1`), numbered
+  # only on request.
   defp restore_target(vault, original_path, opts) do
-    if Keyword.get(opts, :unique, false) and String.ends_with?(original_path, ".md") do
+    if Keyword.get(opts, :unique, false) and markdown_path?(original_path) do
       folder = original_path |> Path.dirname() |> then(&if(&1 == ".", do: "", else: &1))
-      free_path(vault, folder, Storage.title_from_path(original_path), nil)
+      first_free(vault, kept_name(folder, Path.basename(original_path)), nil, opts)
     else
       {:ok, original_path}
     end
   end
+
+  # Case-insensitive, as the walk is: `Note.MD` is a note.
+  defp markdown_path?(path), do: Storage.drop_extension(path) != path
 
   @doc "Delete one trashed item for good."
   @spec purge_trash(Vault.t(), map()) :: :ok | {:error, term()}
@@ -1018,6 +1047,15 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   @snippet_start "\u{E000}"
   @snippet_stop "\u{E001}"
 
+  # The front matter block, for Postgres to cut before `ts_headline`: what
+  # `Markdown`'s regex accepts (CRLF, trailing blanks after the closing `---`,
+  # a note that is only front matter). The `{1,1}?` is load-bearing: a
+  # Postgres ARE takes the greediness of its first quantifier, so without it
+  # `\r?` makes the whole match greedy and `.*?` runs to the last `---` in
+  # the note, taking the body with it. Applied only when the note has front
+  # matter, so a body that opens with a `---` rule keeps its text.
+  @frontmatter_pattern ~S"(?:\A---\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)){1,1}?"
+
   @doc """
   `search/3`, with a snippet of each note showing where it matched.
 
@@ -1028,7 +1066,8 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   escapes them its own way: nothing from a note's text reaches a page
   unescaped through this.
 
-  Options: `:limit` (default 50), `:words` (the snippet's length, default 18).
+  Options: `:limit` (default 50), `:words` (the snippet's length in words,
+  default 18, kept within 3..60).
   """
   @spec search_with_snippets(String.t(), String.t(), keyword()) :: [
           %{note: Note.t(), snippet: [{:text | :match, String.t()}]}
@@ -1043,7 +1082,7 @@ defmodule PhoenixKitKnowledgeBase.Notes do
         words = opts |> Keyword.get(:words, 18) |> max(3) |> min(60)
 
         options =
-          "StartSel=#{@snippet_start}, StopSel=#{@snippet_stop}, MaxWords=#{words}, MinWords=#{min(5, words)}, MaxFragments=1"
+          "StartSel=#{@snippet_start}, StopSel=#{@snippet_stop}, MaxWords=#{words}, MinWords=#{min(5, words - 1)}, MaxFragments=1"
 
         repo().all(
           from(n in Note,
@@ -1058,8 +1097,11 @@ defmodule PhoenixKitKnowledgeBase.Notes do
             select:
               {n,
                fragment(
-                 "ts_headline('english', regexp_replace(?, '\\A---\\n.*\\?\\n---\\n', ''), websearch_to_tsquery('english', ?), ?)",
+                 "ts_headline('english', CASE WHEN ? = '{}'::jsonb THEN ? ELSE regexp_replace(?, ?, '') END, websearch_to_tsquery('english', ?), ?)",
+                 n.frontmatter,
                  n.content,
+                 n.content,
+                 ^@frontmatter_pattern,
                  ^trimmed,
                  ^options
                )}
