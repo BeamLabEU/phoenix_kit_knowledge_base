@@ -59,6 +59,7 @@ defmodule PhoenixKitKnowledgeBase.Errors do
     do: gettext("A note with that name already exists in this folder.")
 
   def message(:target_exists), do: gettext("Something with that name is already there.")
+  def message(:too_many_duplicates), do: gettext("Too many notes already have that name.")
   def message(:unsafe_path), do: gettext("That path is not inside the vault.")
   def message(:refuse_descendant), do: gettext("A folder cannot be moved inside itself.")
 

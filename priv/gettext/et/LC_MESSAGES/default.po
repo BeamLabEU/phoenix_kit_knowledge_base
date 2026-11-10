@@ -339,7 +339,7 @@ msgid_plural "%{count} results"
 msgstr[0] "%{count} tulemus"
 msgstr[1] "%{count} tulemust"
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:63
+#: lib/phoenix_kit_knowledge_base/errors.ex:64
 #, elixir-autogen, elixir-format
 msgid "A folder cannot be moved inside itself."
 msgstr "Kausta ei saa teisaldada iseenda sisse."
@@ -952,7 +952,7 @@ msgstr "%{path} muudeti mujal — teises brauseris, teise inimese poolt või ser
 msgid "Something links here. Create the note and every link waiting for this title resolves to it."
 msgstr "Siia viidatakse. Loo märge ja kõik seda pealkirja ootavad lingid hakkavad sellele viitama."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:95
+#: lib/phoenix_kit_knowledge_base/errors.ex:96
 #, elixir-autogen, elixir-format
 msgid "Something went wrong. Try again, or rescan the vault."
 msgstr "Midagi läks valesti. Proovi uuesti või skanni hoidla uuesti."
@@ -962,12 +962,12 @@ msgstr "Midagi läks valesti. Proovi uuesti või skanni hoidla uuesti."
 msgid "Something with that name is already there."
 msgstr "Selle nimega üksus on seal juba olemas."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:77
+#: lib/phoenix_kit_knowledge_base/errors.ex:78
 #, elixir-autogen, elixir-format
 msgid "That file no longer exists on disk."
 msgstr "Seda faili pole enam kettal."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:69
+#: lib/phoenix_kit_knowledge_base/errors.ex:70
 #, elixir-autogen, elixir-format
 msgid "That is not in the trash."
 msgstr "Seda pole prügikastis."
@@ -982,7 +982,7 @@ msgstr "See nimi on Windowsis reserveeritud ja rikuks seal hoidla sünkroonimise
 msgid "That name is too long for a file name."
 msgstr "See nimi on failinimeks liiga pikk."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:68
+#: lib/phoenix_kit_knowledge_base/errors.ex:69
 #, elixir-autogen, elixir-format
 msgid "That no longer exists."
 msgstr "Seda pole enam olemas."
@@ -997,7 +997,7 @@ msgstr "Seda märget pole enam kettal."
 msgid "That note no longer exists."
 msgstr "Seda märget pole enam olemas."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#: lib/phoenix_kit_knowledge_base/errors.ex:63
 #, elixir-autogen, elixir-format
 msgid "That path is not inside the vault."
 msgstr "See tee pole hoidla sees."
@@ -1008,19 +1008,19 @@ msgstr "See tee pole hoidla sees."
 msgid "That vault does not exist, or you do not have access to it."
 msgstr "Seda hoidlat pole olemas või sul pole sellele ligipääsu."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:79
+#: lib/phoenix_kit_knowledge_base/errors.ex:80
 #, elixir-autogen, elixir-format
 msgid "The disk holding the vault is full."
 msgstr "Hoidlat sisaldav ketas on täis."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:84
+#: lib/phoenix_kit_knowledge_base/errors.ex:85
 #, elixir-autogen, elixir-format
 msgid "The folder moved, but %{count} note in it could not be re-indexed. Rescan the vault to repair it."
 msgid_plural "The folder moved, but %{count} notes in it could not be re-indexed. Rescan the vault to repair it."
 msgstr[0] "Kaust teisaldati, kuid selles olevat %{count} märget ei õnnestunud uuesti indekseerida. Skanni hoidla uuesti, et see parandada."
 msgstr[1] "Kaust teisaldati, kuid selles olevaid %{count} märget ei õnnestunud uuesti indekseerida. Skanni hoidla uuesti, et see parandada."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:78
+#: lib/phoenix_kit_knowledge_base/errors.ex:79
 #, elixir-autogen, elixir-format
 msgid "The server is not allowed to write to the vault's folder."
 msgstr "Serveril pole õigust hoidla kausta kirjutada."
@@ -1030,12 +1030,12 @@ msgstr "Serveril pole õigust hoidla kausta kirjutada."
 msgid "The vault's creator — cannot be removed"
 msgstr "Hoidla looja — teda ei saa eemaldada"
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:80
+#: lib/phoenix_kit_knowledge_base/errors.ex:81
 #, elixir-autogen, elixir-format
 msgid "The vault's folder is read-only."
 msgstr "Hoidla kaust on kirjutuskaitstud."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:66
+#: lib/phoenix_kit_knowledge_base/errors.ex:67
 #, elixir-autogen, elixir-format
 msgid "The vault's own folder cannot be moved or deleted."
 msgstr "Hoidla enda kausta ei saa teisaldada ega kustutada."
@@ -1060,7 +1060,7 @@ msgstr "Märge on muutunud pärast selle avamist"
 msgid "This note's file is gone from disk — moved or deleted somewhere else. Reload, or overwrite to write your version back."
 msgstr "Selle märkme fail on kettalt kadunud — see teisaldati või kustutati mujal. Laadi uuesti või kirjuta üle, et oma versioon tagasi panna."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:73
+#: lib/phoenix_kit_knowledge_base/errors.ex:74
 #, elixir-autogen, elixir-format
 msgid "This text contains a character a note cannot hold (a NUL byte). Remove it and save again."
 msgstr "Tekstis on märk, mida märge ei saa sisaldada (NUL-bait). Eemalda see ja salvesta uuesti."
@@ -1243,3 +1243,8 @@ msgstr "lugeja"
 #, elixir-autogen, elixir-format
 msgid "“%{title}” doesn't exist yet"
 msgstr "„%{title}“ pole veel olemas"
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#, elixir-autogen, elixir-format
+msgid "Too many notes already have that name."
+msgstr "Liiga paljudel märkmetel on juba see nimi."

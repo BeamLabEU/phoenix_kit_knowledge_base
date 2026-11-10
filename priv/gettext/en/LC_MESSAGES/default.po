@@ -339,7 +339,7 @@ msgid_plural "%{count} results"
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:63
+#: lib/phoenix_kit_knowledge_base/errors.ex:64
 #, elixir-autogen, elixir-format
 msgid "A folder cannot be moved inside itself."
 msgstr ""
@@ -952,7 +952,7 @@ msgstr ""
 msgid "Something links here. Create the note and every link waiting for this title resolves to it."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:95
+#: lib/phoenix_kit_knowledge_base/errors.ex:96
 #, elixir-autogen, elixir-format
 msgid "Something went wrong. Try again, or rescan the vault."
 msgstr ""
@@ -962,12 +962,12 @@ msgstr ""
 msgid "Something with that name is already there."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:77
+#: lib/phoenix_kit_knowledge_base/errors.ex:78
 #, elixir-autogen, elixir-format
 msgid "That file no longer exists on disk."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:69
+#: lib/phoenix_kit_knowledge_base/errors.ex:70
 #, elixir-autogen, elixir-format
 msgid "That is not in the trash."
 msgstr ""
@@ -982,7 +982,7 @@ msgstr ""
 msgid "That name is too long for a file name."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:68
+#: lib/phoenix_kit_knowledge_base/errors.ex:69
 #, elixir-autogen, elixir-format
 msgid "That no longer exists."
 msgstr ""
@@ -997,7 +997,7 @@ msgstr ""
 msgid "That note no longer exists."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#: lib/phoenix_kit_knowledge_base/errors.ex:63
 #, elixir-autogen, elixir-format
 msgid "That path is not inside the vault."
 msgstr ""
@@ -1008,19 +1008,19 @@ msgstr ""
 msgid "That vault does not exist, or you do not have access to it."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:79
+#: lib/phoenix_kit_knowledge_base/errors.ex:80
 #, elixir-autogen, elixir-format
 msgid "The disk holding the vault is full."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:84
+#: lib/phoenix_kit_knowledge_base/errors.ex:85
 #, elixir-autogen, elixir-format
 msgid "The folder moved, but %{count} note in it could not be re-indexed. Rescan the vault to repair it."
 msgid_plural "The folder moved, but %{count} notes in it could not be re-indexed. Rescan the vault to repair it."
 msgstr[0] ""
 msgstr[1] ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:78
+#: lib/phoenix_kit_knowledge_base/errors.ex:79
 #, elixir-autogen, elixir-format
 msgid "The server is not allowed to write to the vault's folder."
 msgstr ""
@@ -1030,12 +1030,12 @@ msgstr ""
 msgid "The vault's creator — cannot be removed"
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:80
+#: lib/phoenix_kit_knowledge_base/errors.ex:81
 #, elixir-autogen, elixir-format
 msgid "The vault's folder is read-only."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:66
+#: lib/phoenix_kit_knowledge_base/errors.ex:67
 #, elixir-autogen, elixir-format
 msgid "The vault's own folder cannot be moved or deleted."
 msgstr ""
@@ -1060,7 +1060,7 @@ msgstr ""
 msgid "This note's file is gone from disk — moved or deleted somewhere else. Reload, or overwrite to write your version back."
 msgstr ""
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:73
+#: lib/phoenix_kit_knowledge_base/errors.ex:74
 #, elixir-autogen, elixir-format
 msgid "This text contains a character a note cannot hold (a NUL byte). Remove it and save again."
 msgstr ""
@@ -1242,4 +1242,9 @@ msgstr ""
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2127
 #, elixir-autogen, elixir-format
 msgid "“%{title}” doesn't exist yet"
+msgstr ""
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#, elixir-autogen, elixir-format
+msgid "Too many notes already have that name."
 msgstr ""

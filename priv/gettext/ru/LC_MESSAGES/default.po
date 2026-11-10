@@ -347,7 +347,7 @@ msgstr[0] "%{count} результат"
 msgstr[1] "%{count} результата"
 msgstr[2] "%{count} результатов"
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:63
+#: lib/phoenix_kit_knowledge_base/errors.ex:64
 #, elixir-autogen, elixir-format
 msgid "A folder cannot be moved inside itself."
 msgstr "Папку нельзя переместить внутрь неё самой."
@@ -962,7 +962,7 @@ msgstr "Файл %{path} изменили в другом месте — в др
 msgid "Something links here. Create the note and every link waiting for this title resolves to it."
 msgstr "Сюда кто-то ссылается. Создайте заметку, и все ссылки, ожидающие это название, начнут вести на неё."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:95
+#: lib/phoenix_kit_knowledge_base/errors.ex:96
 #, elixir-autogen, elixir-format
 msgid "Something went wrong. Try again, or rescan the vault."
 msgstr "Что-то пошло не так. Попробуйте ещё раз или пересканируйте хранилище."
@@ -972,12 +972,12 @@ msgstr "Что-то пошло не так. Попробуйте ещё раз �
 msgid "Something with that name is already there."
 msgstr "Там уже есть что-то с таким названием."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:77
+#: lib/phoenix_kit_knowledge_base/errors.ex:78
 #, elixir-autogen, elixir-format
 msgid "That file no longer exists on disk."
 msgstr "Этого файла больше нет на диске."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:69
+#: lib/phoenix_kit_knowledge_base/errors.ex:70
 #, elixir-autogen, elixir-format
 msgid "That is not in the trash."
 msgstr "Этого нет в корзине."
@@ -992,7 +992,7 @@ msgstr "Это название зарезервировано в Windows и с�
 msgid "That name is too long for a file name."
 msgstr "Название слишком длинное для имени файла."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:68
+#: lib/phoenix_kit_knowledge_base/errors.ex:69
 #, elixir-autogen, elixir-format
 msgid "That no longer exists."
 msgstr "Этого больше нет."
@@ -1007,7 +1007,7 @@ msgstr "Этой заметки больше нет на диске."
 msgid "That note no longer exists."
 msgstr "Этой заметки больше нет."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#: lib/phoenix_kit_knowledge_base/errors.ex:63
 #, elixir-autogen, elixir-format
 msgid "That path is not inside the vault."
 msgstr "Этот путь находится вне хранилища."
@@ -1018,12 +1018,12 @@ msgstr "Этот путь находится вне хранилища."
 msgid "That vault does not exist, or you do not have access to it."
 msgstr "Такого хранилища нет, или у вас нет к нему доступа."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:79
+#: lib/phoenix_kit_knowledge_base/errors.ex:80
 #, elixir-autogen, elixir-format
 msgid "The disk holding the vault is full."
 msgstr "Диск, на котором лежит хранилище, заполнен."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:84
+#: lib/phoenix_kit_knowledge_base/errors.ex:85
 #, elixir-autogen, elixir-format
 msgid "The folder moved, but %{count} note in it could not be re-indexed. Rescan the vault to repair it."
 msgid_plural "The folder moved, but %{count} notes in it could not be re-indexed. Rescan the vault to repair it."
@@ -1031,7 +1031,7 @@ msgstr[0] "Папка перемещена, но %{count} заметку в не
 msgstr[1] "Папка перемещена, но %{count} заметки в ней не удалось переиндексировать. Пересканируйте хранилище, чтобы это исправить."
 msgstr[2] "Папка перемещена, но %{count} заметок в ней не удалось переиндексировать. Пересканируйте хранилище, чтобы это исправить."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:78
+#: lib/phoenix_kit_knowledge_base/errors.ex:79
 #, elixir-autogen, elixir-format
 msgid "The server is not allowed to write to the vault's folder."
 msgstr "У сервера нет прав на запись в папку хранилища."
@@ -1041,12 +1041,12 @@ msgstr "У сервера нет прав на запись в папку хра
 msgid "The vault's creator — cannot be removed"
 msgstr "Создатель хранилища — его нельзя убрать"
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:80
+#: lib/phoenix_kit_knowledge_base/errors.ex:81
 #, elixir-autogen, elixir-format
 msgid "The vault's folder is read-only."
 msgstr "Папка хранилища доступна только для чтения."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:66
+#: lib/phoenix_kit_knowledge_base/errors.ex:67
 #, elixir-autogen, elixir-format
 msgid "The vault's own folder cannot be moved or deleted."
 msgstr "Корневую папку хранилища нельзя переместить или удалить."
@@ -1071,7 +1071,7 @@ msgstr "Заметка изменилась после того, как вы е�
 msgid "This note's file is gone from disk — moved or deleted somewhere else. Reload, or overwrite to write your version back."
 msgstr "Файла этой заметки больше нет на диске — его переместили или удалили в другом месте. Перезагрузите или перезапишите, чтобы вернуть свою версию."
 
-#: lib/phoenix_kit_knowledge_base/errors.ex:73
+#: lib/phoenix_kit_knowledge_base/errors.ex:74
 #, elixir-autogen, elixir-format
 msgid "This text contains a character a note cannot hold (a NUL byte). Remove it and save again."
 msgstr "В тексте есть символ, который заметка не может хранить (нулевой байт). Удалите его и сохраните снова."
@@ -1254,3 +1254,8 @@ msgstr "читатель"
 #, elixir-autogen, elixir-format
 msgid "“%{title}” doesn't exist yet"
 msgstr "«%{title}» ещё не существует"
+
+#: lib/phoenix_kit_knowledge_base/errors.ex:62
+#, elixir-autogen, elixir-format
+msgid "Too many notes already have that name."
+msgstr "Слишком много заметок уже носят это имя."
