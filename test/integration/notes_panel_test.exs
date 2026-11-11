@@ -778,6 +778,45 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       refute html =~ "Globex"
     end
 
+    test "the tree starts collapsed, and opens on its chevron", %{conn: conn, me: me} do
+      {:ok, lv, html} = mount_panel(conn, me)
+      assert html =~ ~r/id="panel-tree-expanded-0"[^>]*class="[^"]*hidden/
+      refute html =~ ~r/id="panel-tree-collapsed-0"[^>]*class="[^"]*hidden/
+
+      html = fire(lv, "toggle_sidebar")
+      refute html =~ ~r/id="panel-tree-expanded-0"[^>]*class="[^"]*hidden/
+    end
+
+    test "a folder's row says how much is in it and who changed it last", %{
+      conn: conn,
+      me: me,
+      other: other,
+      vault: vault
+    } do
+      {:ok, _} =
+        Auth.update_user_profile(other, %{"first_name" => "Grace", "last_name" => "Hopper"})
+
+      {:ok, inner} =
+        Notes.create_note(
+          vault,
+          %{title: "Deep", folder_path: "Clients/Acme/Calls/2026"},
+          me.uuid
+        )
+
+      {:ok, _} = Notes.update_content(vault, inner, "changed", actor_uuid: other.uuid)
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+
+      [row] =
+        Regex.run(
+          ~r/<tr[^>]*id="panel-folder-[^"]+"(?:(?!<\/tr>).)*Calls(?:(?!<\/tr>).)*<\/tr>/s,
+          html
+        )
+
+      assert row =~ "1 note"
+      assert row =~ "Grace Hopper"
+    end
+
     test "a folder is opened from the tree, and a forged one is ignored", %{
       conn: conn,
       me: me,

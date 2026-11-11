@@ -187,6 +187,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:notice, nil)
     |> assign(:vault, nil)
     |> assign(:folders, [])
+    |> assign(:folder_stats, %{})
     |> assign(:notes, [])
     |> assign(:people, %{})
     |> assign(:admin_href, nil)
@@ -198,7 +199,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:tree_folders, %{})
     |> assign(:tree_items, %{})
     |> assign(:expanded_folders, MapSet.new())
-    |> assign(:sidebar_collapsed, false)
+    # Collapsed until opened: the list is what the panel is for, and on a
+    # page the tree's 240px is taken from it.
+    |> assign(:sidebar_collapsed, true)
     |> assign(:renaming_folder, nil)
     |> assign(:renaming_source, nil)
     |> assign(:renaming_text, "")
@@ -248,6 +251,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp load_listing(%{assigns: %{vault: nil}} = socket) do
     socket
     |> assign(:folders, [])
+    |> assign(:folder_stats, %{})
     |> assign(:notes, [])
     |> assign(:tree, [])
     |> assign(:tree_folders, %{})
@@ -265,13 +269,40 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     all_notes = Notes.list_notes(vault.uuid, under: place.folder, content: false)
     notes = Enum.filter(all_notes, &(&1.folder_path == current))
 
+    shown_folders = Enum.filter(folders, &(parent_path(&1.relative_path) == current))
+    folder_stats = folder_stats(shown_folders, all_notes)
+
     socket
-    |> assign(:folders, Enum.filter(folders, &(parent_path(&1.relative_path) == current)))
+    |> assign(:folders, shown_folders)
+    |> assign(:folder_stats, folder_stats)
     |> assign(:notes, notes)
     |> assign(:tree, tree)
     |> assign(:tree_folders, Map.new(folders, &{&1.uuid, &1}))
     |> assign(:tree_items, tree_items(all_notes, folders, place.folder))
-    |> assign_people(notes)
+    |> assign_people(notes ++ Enum.flat_map(Map.values(folder_stats), &List.wrap(&1.latest)))
+  end
+
+  # What a folder's row says besides its name: how many notes are in it (all
+  # the way down) and the latest change among them — when, and by whom. Read
+  # from the notes the poll has already loaded, so it costs no query. A folder
+  # records no author of its own (it is a directory on disk), so its
+  # "Created" column has a date and no name.
+  defp folder_stats(folders, notes) do
+    Map.new(folders, fn folder ->
+      prefix = folder.relative_path <> "/"
+
+      inside =
+        Enum.filter(
+          notes,
+          &(&1.folder_path == folder.relative_path or String.starts_with?(&1.folder_path, prefix))
+        )
+
+      {folder.uuid,
+       %{
+         count: length(inside),
+         latest: Enum.max_by(inside, & &1.updated_at, DateTime, fn -> nil end)
+       }}
+    end)
   end
 
   defp flatten_tree(nodes),
@@ -1405,7 +1436,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             data-draggable-folder={@can_edit? && folder.uuid}
             class="hover cursor-pointer"
           >
-            <td class="min-w-0" colspan="3">
+            <td class="min-w-0">
               <button
                 type="button"
                 phx-click="open_folder"
@@ -1416,6 +1447,27 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
                 <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-base-content/60" />
                 <span class="truncate font-medium">{folder.name}</span>
               </button>
+              <%!-- The same two lines a note's row has, so the rows are one
+                   height: the folder's size, and its latest change on a
+                   narrow panel. --%>
+              <div class="pl-6 text-xs text-base-content/50 truncate">
+                {ngettext("%{count} note", "%{count} notes", @folder_stats[folder.uuid].count)}<span
+                  :if={@folder_stats[folder.uuid].latest}
+                  class="@sm:hidden"
+                > · {gettext("Modified %{date}",
+                  date: short_date(@folder_stats[folder.uuid].latest.updated_at)
+                )}</span>
+              </div>
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              {render_stamp(%{at: folder.inserted_at, by: nil, people: @people})}
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              <%= if latest = @folder_stats[folder.uuid].latest do %>
+                {render_stamp(%{at: latest.updated_at, by: latest.updated_by, people: @people})}
+              <% else %>
+                {render_stamp(%{at: folder.updated_at, by: nil, people: @people})}
+              <% end %>
             </td>
           </tr>
           <tr
@@ -1656,8 +1708,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end)
   end
 
-  # When, and by whom underneath — the by-line only when the note records one
-  # (a file written outside the app has nobody).
+  # When, and by whom underneath — a dash when nobody is on record.
   defp render_stamp(assigns) do
     ~H"""
     <time
@@ -1670,6 +1721,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     <span :if={@by} class="block text-xs text-base-content/50 truncate max-w-[12rem]">
       {person(@people, @by)}
     </span>
+    <%!-- Nobody on record (a folder, a file written outside the app): a
+         dash, so the row keeps the height of the others. --%>
+    <span :if={is_nil(@by)} class="block text-xs text-base-content/30" aria-hidden="true">—</span>
     """
   end
 
