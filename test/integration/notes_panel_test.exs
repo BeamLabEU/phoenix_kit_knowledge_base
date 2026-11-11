@@ -11,6 +11,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
+  alias PhoenixKit.Users.{Auth, Permissions, Roles}
   alias PhoenixKitKnowledgeBase.{Notes, Places, Storage}
   alias PhoenixKitKnowledgeBase.Schemas.Vault
   alias PhoenixKitKnowledgeBase.Test.HostLive
@@ -114,6 +115,13 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     test "one visibility hides the switch", %{conn: conn, me: me} do
       {:ok, _lv, html} = mount_panel(conn, me, visibility_options: [:private])
       refute html =~ "Everyone here"
+    end
+
+    test "a header with nothing in it is not drawn", %{conn: conn, me: me} do
+      {:ok, _lv, html} = mount_panel(conn, me, visibility_options: [:private], show_label: false)
+      refute html =~ "<header"
+      {:ok, _lv, html} = mount_panel(conn, me, visibility_options: [:private])
+      assert html =~ "<header"
     end
   end
 
@@ -397,6 +405,48 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       {:ok, _lv, html} = mount_panel(conn, me)
       refute html =~ "Open the whole vault"
     end
+
+    test "the vault link is off unless asked for, even for an admin", %{conn: conn, me: me} do
+      {:ok, _} = Roles.assign_role(me, "Admin")
+      # The module is not registered in the test app, so its own key would be
+      # refused; the wildcard key holds every module's.
+      admin = Roles.get_role_by_name("Admin")
+      {:ok, _} = Permissions.grant_permission(admin.uuid, "*")
+      # Their own vault: they own it, so the admin page would open for them.
+      note!(me, "Anything", @path, :private)
+
+      {:ok, _lv, html} = mount_panel(conn, me, default_visibility: :private)
+      refute html =~ "Open the whole vault"
+
+      {:ok, _lv, html} = mount_panel(conn, me, default_visibility: :private, vault_link: true)
+      assert html =~ "Open the whole vault"
+    end
+
+    test "the vault link stays hidden from a plain user who asks for it", %{conn: conn, me: me} do
+      note!(me, "Anything")
+      {:ok, _lv, html} = mount_panel(conn, me, vault_link: true)
+      refute html =~ "Open the whole vault"
+    end
+
+    test "the list says who wrote each note and who changed it last", %{
+      conn: conn,
+      me: me,
+      other: other
+    } do
+      {:ok, _} = Auth.update_user_profile(me, %{"first_name" => "Ada", "last_name" => "Lovelace"})
+
+      {:ok, _} =
+        Auth.update_user_profile(other, %{"first_name" => "Grace", "last_name" => "Hopper"})
+
+      {vault, note} = note!(me, "Minutes")
+      {:ok, _} = Notes.update_content(vault, note, "changed", actor_uuid: other.uuid)
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+      assert html =~ "Created"
+      assert html =~ "Modified"
+      assert html =~ "Ada Lovelace"
+      assert html =~ "Grace Hopper"
+    end
   end
 
   describe "writing" do
@@ -645,6 +695,48 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       leaf(lv, {:leaf_mode_changed, %{editor_id: "x", mode: :markdown}})
       leaf(lv, {:leaf_focus, %{editor_id: "x"}})
       assert Process.alive?(lv.pid)
+    end
+  end
+
+  describe "renaming from the title" do
+    setup %{me: me} do
+      {vault, note} = note!(me, "Call notes")
+      %{vault: vault, note: note}
+    end
+
+    test "the title reads as the way to rename", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      html = fire(lv, "open_note", %{"uuid" => note.uuid})
+      assert html =~ "Click to rename"
+      assert html =~ "Rename “Call notes”"
+    end
+
+    test "leaving the field saves the new title", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      html = fire(lv, "rename_note", %{"value" => "Call with Acme"})
+      assert html =~ "Call with Acme"
+      refute html =~ ~s(id="panel-rename")
+    end
+
+    test "an unchanged title just closes the field", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      html = fire(lv, "rename_note", %{"value" => "Call notes "})
+      refute html =~ ~s(id="panel-rename")
+      refute html =~ "already here"
+    end
+
+    test "a blur after Escape renames nothing", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      fire(lv, "cancel")
+      html = fire(lv, "rename_note", %{"value" => "Typed then abandoned"})
+      refute html =~ "Typed then abandoned"
+      assert Notes.get_note(note.vault_uuid, note.uuid).title == "Call notes"
     end
   end
 end

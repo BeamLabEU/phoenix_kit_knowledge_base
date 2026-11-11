@@ -28,6 +28,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       (see `Places`); private ones are each person's own
     * `default_visibility` — `:shared` (default)
     * `poll` — ms between refreshes of the list, default `5_000`; `0` turns it off
+    * `vault_link` — `false` (default). `true` adds a button at the top right
+      that opens the whole vault on the admin pages, shown only to someone who
+      may open it there
     * `class`
 
   ## How it runs inside someone else's page
@@ -46,6 +49,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   use PhoenixKitWeb, :live_component
   use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
+  alias Phoenix.LiveView.JS
+  alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Auth.Scope
   alias PhoenixKitKnowledgeBase.{Errors, Links, Markdown, Notes, Paths, Places, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Note
@@ -145,6 +150,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:visibility_options, options)
     |> assign(:default_visibility, Map.get(assigns, :default_visibility, :shared))
     |> assign(:poll, Map.get(assigns, :poll, @default_poll))
+    |> assign(:vault_link?, Map.get(assigns, :vault_link, false) == true)
     |> assign(:class, Map.get(assigns, :class))
   end
 
@@ -180,6 +186,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:vault, nil)
     |> assign(:folders, [])
     |> assign(:notes, [])
+    |> assign(:people, %{})
     |> assign(:admin_href, nil)
     |> assign(:admin_href_for, nil)
     |> assign(:timer_armed?, false)
@@ -234,9 +241,35 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp load_listing(socket) do
     %{vault: vault, current_folder: current} = socket.assigns
 
+    notes = Notes.list_notes(vault.uuid, folder_path: current, content: false)
+
     socket
     |> assign(:folders, Notes.list_folders(vault.uuid, parent: current))
-    |> assign(:notes, Notes.list_notes(vault.uuid, folder_path: current, content: false))
+    |> assign(:notes, notes)
+    |> assign_people(notes)
+  end
+
+  # Who wrote and who last changed each note, by name. Names are kept across
+  # polls and only the people not yet known are read, so a listing that does
+  # not change costs no query here. A uuid with no user behind it (deleted, or
+  # written from outside the app) is remembered as unknown rather than asked
+  # about again on every poll.
+  defp assign_people(socket, notes) do
+    known = socket.assigns.people
+
+    missing =
+      notes
+      |> Enum.flat_map(&[&1.created_by, &1.updated_by])
+      |> Enum.reject(&(is_nil(&1) or Map.has_key?(known, &1)))
+      |> Enum.uniq()
+
+    if missing == [] do
+      socket
+    else
+      found = Map.new(Auth.get_users_by_uuids(missing), &{&1.uuid, Vaults.user_label(&1)})
+      fetched = Map.new(missing, &{&1, Map.get(found, &1)})
+      assign(socket, :people, Map.merge(known, fetched))
+    end
   end
 
   # Only for someone who could open the vault on the admin pages anyway: the
@@ -252,6 +285,10 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # types, not a fault here — a panel is given a user, not a scope, so it has to
   # build one.
   @dialyzer {:nowarn_function, assign_admin_href: 1}
+  # Not asked for: no link, and no `Scope.for_user/1` to build one.
+  defp assign_admin_href(%{assigns: %{vault_link?: false}} = socket),
+    do: socket |> assign(:admin_href, nil) |> assign(:admin_href_for, nil)
+
   defp assign_admin_href(%{assigns: %{vault: nil}} = socket),
     do: socket |> assign(:admin_href, nil) |> assign(:admin_href_for, nil)
 
@@ -401,14 +438,13 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     with_access(socket, :edit, &assign(&1, :renaming?, true))
   end
 
-  def handle_event("rename_note", %{"title" => title}, socket) do
-    with_open_note(socket, :edit, fn socket, vault, note ->
-      case Notes.rename_note(vault, note, title, actor_uuid: socket.assigns.user.uuid) do
-        {:ok, renamed} -> socket |> assign(:note, renamed) |> assign(:renaming?, false)
-        {:error, reason} -> notice(socket, :error, error_message(reason))
-      end
-    end)
-  end
+  # From Enter, or from leaving the field (`phx-blur` sends `value`). A blur
+  # that arrives after Escape already cancelled finds `renaming?` off and does
+  # nothing; an unchanged title just closes the field.
+  def handle_event("rename_note", %{"value" => title}, socket),
+    do: if(socket.assigns.renaming?, do: rename(socket, title), else: {:noreply, socket})
+
+  def handle_event("rename_note", %{"title" => title}, socket), do: rename(socket, title)
 
   def handle_event("trash_note", _params, socket) do
     with_open_note(socket, :edit, fn socket, vault, note ->
@@ -486,6 +522,23 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # runs in the host's process: a clause error here would take the host's whole
   # page down.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  defp rename(socket, title) when is_binary(title) do
+    with_open_note(socket, :edit, fn socket, vault, note ->
+      if String.trim(title) == note.title,
+        do: assign(socket, :renaming?, false),
+        else: apply_rename(socket, vault, note, title)
+    end)
+  end
+
+  defp rename(socket, _title), do: {:noreply, socket}
+
+  defp apply_rename(socket, vault, note, title) do
+    case Notes.rename_note(vault, note, title, actor_uuid: socket.assigns.user.uuid) do
+      {:ok, renamed} -> socket |> assign(:note, renamed) |> assign(:renaming?, false)
+      {:error, reason} -> notice(socket, :error, error_message(reason))
+    end
+  end
 
   @numbered_attempts 20
 
@@ -868,9 +921,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     ~H"""
     <section
       id={@id}
-      class={["rounded-box border border-base-300 bg-base-100 p-3 sm:p-4 space-y-3 min-w-0", @class]}
+      class={[
+        "@container rounded-box border border-base-300 bg-base-100 p-3 sm:p-4 space-y-3 min-w-0",
+        @class
+      ]}
     >
-      <header class="flex flex-wrap items-center justify-between gap-2">
+      <%!-- Nothing to put in it (no label, one visibility, no vault link):
+           no empty strip above the list. --%>
+      <header
+        :if={@show_label? or length(@visibility_options) > 1 or not is_nil(@admin_href)}
+        class="flex flex-wrap items-center justify-between gap-2"
+      >
         <h2 :if={@show_label?} class="font-semibold truncate min-w-0">
           {@label || List.last(@place.path)}
         </h2>
@@ -965,38 +1026,71 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         <% end %>
       </nav>
 
-      <ul class="divide-y divide-base-200">
-        <li :for={folder <- @folders}>
-          <button
-            type="button"
+      <%!-- A table like core's media list. The panel is often a sidebar, so
+           the columns follow the panel's own width (a container query), not
+           the window's: narrow, they fold into one line under the name. --%>
+      <table :if={@folders != [] or @notes != []} class="table table-sm">
+        <thead class="hidden @md:table-header-group">
+          <tr>
+            <th>{gettext("Name")}</th>
+            <th>{gettext("Created")}</th>
+            <th>{gettext("Modified")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            :for={folder <- @folders}
             phx-click="open_folder"
             phx-value-path={folder.relative_path}
             phx-target={@myself}
-            class="flex w-full items-center gap-2 py-2 text-left hover:bg-base-200 rounded px-1"
+            class="hover cursor-pointer"
           >
-            <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-base-content/60" />
-            <span class="truncate">{folder.name}</span>
-          </button>
-        </li>
-        <li :for={note <- @notes}>
-          <button
-            type="button"
+            <td class="min-w-0" colspan="3">
+              <button
+                type="button"
+                phx-click="open_folder"
+                phx-value-path={folder.relative_path}
+                phx-target={@myself}
+                class="flex w-full min-w-0 items-center gap-2 text-left"
+              >
+                <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-base-content/60" />
+                <span class="truncate font-medium">{folder.name}</span>
+              </button>
+            </td>
+          </tr>
+          <tr
+            :for={note <- @notes}
             phx-click="open_note"
             phx-value-uuid={note.uuid}
             phx-target={@myself}
-            class="flex w-full items-center gap-2 py-2 text-left hover:bg-base-200 rounded px-1"
+            class="hover cursor-pointer"
           >
-            <.icon name="hero-document-text" class="w-4 h-4 shrink-0 text-base-content/60" />
-            <span class="truncate flex-1">{note.title}</span>
-            <time
-              class="text-xs text-base-content/50 shrink-0"
-              datetime={DateTime.to_iso8601(note.updated_at)}
-            >
-              {short_date(note.updated_at)}
-            </time>
-          </button>
-        </li>
-      </ul>
+            <td class="min-w-0">
+              <button
+                type="button"
+                phx-click="open_note"
+                phx-value-uuid={note.uuid}
+                phx-target={@myself}
+                class="flex w-full min-w-0 items-center gap-2 text-left"
+              >
+                <.icon name="hero-document-text" class="w-4 h-4 shrink-0 text-base-content/60" />
+                <span class="truncate">{note.title}</span>
+              </button>
+              <div class="@md:hidden pl-6 text-xs text-base-content/50 truncate">
+                {gettext("Modified %{date}", date: short_date(note.updated_at))}<span :if={
+                  note.updated_by
+                }> · {person(@people, note.updated_by)}</span>
+              </div>
+            </td>
+            <td class="hidden @md:table-cell whitespace-nowrap">
+              {render_stamp(%{at: note.inserted_at, by: note.created_by, people: @people})}
+            </td>
+            <td class="hidden @md:table-cell whitespace-nowrap">
+              {render_stamp(%{at: note.updated_at, by: note.updated_by, people: @people})}
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <p :if={@folders == [] and @notes == []} class="text-sm text-base-content/50 italic">
         {if @can_edit?, do: gettext("No notes here yet."), else: gettext("No notes here.")}
@@ -1065,26 +1159,31 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           <.icon name="hero-arrow-left" class="w-4 h-4" />
         </button>
 
+        <%!-- The title is the rename field: it looks like one on hover
+             (border, pencil), and a click turns it into one in place. Enter
+             or leaving the field saves, Escape puts it back. --%>
         <form
           :if={@renaming?}
           id={"#{@id}-rename"}
           phx-submit="rename_note"
           phx-target={@myself}
-          class="flex flex-1 min-w-0 gap-2"
+          class="flex-1 min-w-0"
         >
           <input
+            id={"#{@id}-rename-input"}
             type="text"
             name="title"
             value={@note.title}
             aria-label={gettext("Note title")}
-            class="input input-sm flex-1 min-w-0"
+            class="input input-sm w-full font-medium"
+            phx-mounted={JS.focus()}
+            phx-blur="rename_note"
+            phx-keydown="cancel"
+            phx-key="Escape"
+            phx-target={@myself}
             autofocus
             required
           />
-          <button type="submit" class="btn btn-sm btn-primary">{gettext("Rename")}</button>
-          <button type="button" phx-click="cancel" phx-target={@myself} class="btn btn-sm btn-ghost">
-            {gettext("Cancel")}
-          </button>
         </form>
 
         <button
@@ -1092,12 +1191,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           type="button"
           phx-click="start_rename"
           phx-target={@myself}
-          class="font-medium truncate flex-1 min-w-0 text-left hover:underline decoration-dotted"
-          title={gettext("Rename")}
+          class="group flex flex-1 min-w-0 items-center gap-1.5 rounded-field border border-transparent px-2 h-8 text-left font-medium cursor-text hover:border-base-300 hover:bg-base-200/50 focus-visible:border-base-300"
+          title={gettext("Click to rename")}
+          aria-label={gettext("Rename “%{title}”", title: @note.title)}
         >
-          {@note.title}
+          <span class="truncate">{@note.title}</span>
+          <.icon
+            name="hero-pencil"
+            class="w-3.5 h-3.5 shrink-0 opacity-40 group-hover:opacity-80"
+          />
         </button>
-        <h3 :if={not @renaming? and not @can_edit?} class="font-medium truncate flex-1 min-w-0">
+        <h3 :if={not @renaming? and not @can_edit?} class="font-medium truncate flex-1 min-w-0 px-2">
           {@note.title}
         </h3>
 
@@ -1106,16 +1210,6 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         </span>
 
         <div :if={@can_edit? and not @renaming?} class="flex gap-1">
-          <button
-            type="button"
-            phx-click="start_rename"
-            phx-target={@myself}
-            class="btn btn-ghost btn-xs"
-            title={gettext("Rename")}
-            aria-label={gettext("Rename")}
-          >
-            <.icon name="hero-pencil" class="w-4 h-4" />
-          </button>
           <button
             type="button"
             phx-click="trash_note"
@@ -1206,6 +1300,25 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     """
   end
 
+  # When, and by whom underneath — the by-line only when the note records one
+  # (a file written outside the app has nobody).
+  defp render_stamp(assigns) do
+    ~H"""
+    <time
+      class="block text-xs"
+      datetime={DateTime.to_iso8601(@at)}
+      title={PhoenixKit.Utils.Date.format_short_datetime(@at)}
+    >
+      {short_date(@at)}
+    </time>
+    <span :if={@by} class="block text-xs text-base-content/50 truncate max-w-[12rem]">
+      {person(@people, @by)}
+    </span>
+    """
+  end
+
+  defp person(people, uuid), do: Map.get(people, uuid) || gettext("Unknown user")
+
   # The trail from the panel's own folder down to the current one — never above
   # it. The first crumb is the panel's root, labelled as the panel is.
   defp crumbs(place, current) do
@@ -1233,7 +1346,11 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   # "5 Nov" / "5. nov" — core's, so the order and punctuation come from each
   # language's own translation rather than a format string written in English.
-  defp short_date(datetime), do: PhoenixKit.Utils.Date.short(datetime)
+  defp short_date(datetime) do
+    if datetime.year == Date.utc_today().year,
+      do: PhoenixKit.Utils.Date.short(datetime),
+      else: PhoenixKit.Utils.Date.short_with_year(datetime)
+  end
 
   # The vault page's configs, headings already in the reader's language.
   defp suggestion_configs, do: VaultLive.suggestion_configs()
