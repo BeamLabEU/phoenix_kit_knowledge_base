@@ -13,7 +13,7 @@ msgstr ""
 
 #: lib/phoenix_kit_knowledge_base/web/index_live.ex:316
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1140
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1454
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1468
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1211
 #, elixir-autogen, elixir-format
 msgid "%{count} note"
@@ -38,18 +38,18 @@ msgstr "Название не может заканчиваться точкой
 msgid "A name cannot start with a dot."
 msgstr "Название не может начинаться с точки."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1555
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1556
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1569
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1570
 #, elixir-autogen, elixir-format
 msgid "Back to the list"
 msgstr "Назад к списку"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1534
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1548
 #, elixir-autogen, elixir-format
 msgid "Cancel"
 msgstr "Отмена"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1531
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1545
 #, elixir-autogen, elixir-format
 msgid "Create folder"
 msgstr "Создать папку"
@@ -66,14 +66,14 @@ msgid "Everyone here"
 msgstr "Общие"
 
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1366
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1398
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1412
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2284
 #, elixir-autogen, elixir-format
 msgid "Folder"
 msgstr "Папка"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1524
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1525
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1538
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1539
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1999
 #, elixir-autogen, elixir-format
 msgid "Folder name"
@@ -84,7 +84,7 @@ msgstr "Название папки"
 msgid "Give it a name."
 msgstr "Укажите название."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1641
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1655
 #, elixir-autogen, elixir-format
 msgid "Keep mine"
 msgstr "Оставить мою"
@@ -98,13 +98,13 @@ msgstr "Оставить мою"
 msgid "Knowledge Base"
 msgstr "База знаний"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1616
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1630
 #, elixir-autogen, elixir-format
 msgid "Move this note to the vault's trash?"
 msgstr "Переместить эту заметку в корзину хранилища?"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1618
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1619
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1632
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1633
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1933
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1955
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2219
@@ -128,23 +128,23 @@ msgstr "Здесь нет заметки с таким названием"
 msgid "No note with this title here yet — click to create it"
 msgstr "Здесь пока нет заметки с таким названием — нажмите, чтобы создать"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1510
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1524
 #, elixir-autogen, elixir-format
 msgid "No notes here yet."
 msgstr "Здесь пока нет заметок."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1510
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1524
 #, elixir-autogen, elixir-format
 msgid "No notes here."
 msgstr "Здесь нет заметок."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1779
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1793
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1484
 #, elixir-autogen, elixir-format
 msgid "Not saved"
 msgstr "Не сохранено"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1406
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1420
 #, elixir-autogen, elixir-format
 msgid "Note"
 msgstr "Заметка"
@@ -181,18 +181,18 @@ msgstr "Открыть «%{title}»"
 msgid "Rename"
 msgstr "Переименовать"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1778
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1792
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1483
 #, elixir-autogen, elixir-format
 msgid "Saved"
 msgstr "Сохранено"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1649
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1663
 #, elixir-autogen, elixir-format
 msgid "Show their version"
 msgstr "Показать их версию"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1647
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1661
 #, elixir-autogen, elixir-format
 msgid "Someone else changed this note."
 msgstr "Кто-то другой изменил эту заметку."
@@ -209,7 +209,7 @@ msgstr "Здесь уже есть что-то с таким названием.
 msgid "Tags"
 msgstr "Теги"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1633
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1647
 #, elixir-autogen, elixir-format
 msgid "Take theirs"
 msgstr "Взять их версию"
@@ -237,7 +237,7 @@ msgid "These notes could not be set up."
 msgstr "Не удалось подготовить эти заметки."
 
 #: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1183
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1629
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1643
 #, elixir-autogen, elixir-format
 msgid "This note was changed somewhere else, so this edit was not saved."
 msgstr "Эта заметка была изменена в другом месте, поэтому правка не сохранена."
@@ -252,8 +252,8 @@ msgstr "Путь этой панели заметок не подходит: %{r
 msgid "Whose notes"
 msgstr "Чьи заметки"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1673
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1691
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1687
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1705
 #, elixir-autogen, elixir-format
 msgid "Write here. Link with [[Note title]], tag with #tag."
 msgstr "Пишите здесь. Ссылка — [[Название заметки]], тег — #тег."
@@ -660,12 +660,12 @@ msgid "My vaults"
 msgstr "Мои хранилища"
 
 #: lib/phoenix_kit_knowledge_base/web/index_live.ex:224
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1419
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1433
 #, elixir-autogen, elixir-format
 msgid "Name"
 msgstr "Название"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1395
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1409
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:1998
 #, elixir-autogen, elixir-format
 msgid "New folder"
@@ -743,7 +743,7 @@ msgstr "Действия с заметкой"
 msgid "Note moved to the trash."
 msgstr "Заметка перемещена в корзину."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1576
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1590
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2155
 #: lib/phoenix_kit_knowledge_base/web/vault_live.ex:2195
 #, elixir-autogen, elixir-format
@@ -1116,7 +1116,7 @@ msgstr "Адрес (slug)"
 
 #: lib/phoenix_kit_knowledge_base/vaults.ex:367
 #: lib/phoenix_kit_knowledge_base/vaults.ex:376
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1730
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1744
 #, elixir-autogen, elixir-format
 msgid "Unknown user"
 msgstr "Неизвестный пользователь"
@@ -1257,33 +1257,39 @@ msgstr "«%{title}» ещё не существует"
 msgid "Too many notes already have that name."
 msgstr "Слишком много заметок уже носят это имя."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1677
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1691
 #, elixir-autogen, elixir-format
 msgid "Markdown. Saved as you type."
 msgstr "Markdown. Сохраняется по мере ввода."
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1594
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1608
 #, elixir-autogen, elixir-format
 msgid "Click to rename"
 msgstr "Нажмите, чтобы переименовать"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1420
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1434
 #, elixir-autogen, elixir-format
 msgid "Created"
 msgstr "Создано"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1421
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1435
 #, elixir-autogen, elixir-format
 msgid "Modified"
 msgstr "Изменено"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1457
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1494
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1471
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1508
 #, elixir-autogen, elixir-format
 msgid "Modified %{date}"
 msgstr "Изменено %{date}"
 
-#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1595
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1609
 #, elixir-autogen, elixir-format
 msgid "Rename “%{title}”"
 msgstr "Переименовать «%{title}»"
+
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1391
+#: lib/phoenix_kit_knowledge_base/web/notes_panel.ex:1392
+#, elixir-autogen, elixir-format
+msgid "Back"
+msgstr "Назад"

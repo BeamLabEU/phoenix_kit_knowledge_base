@@ -778,6 +778,28 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       refute html =~ "Globex"
     end
 
+    test "a folder has a back arrow up one level; the panel's own folder has none", %{
+      conn: conn,
+      me: me,
+      calls: calls
+    } do
+      back = ~s(phx-value-path="Clients/Acme")
+      {:ok, lv, html} = mount_panel(conn, me)
+      refute html =~ ~s(aria-label="Back")
+
+      html = fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      assert html =~ ~s(aria-label="Back")
+      assert html =~ back
+
+      # Two levels down, it goes up one.
+      html = fire(lv, "open_folder", %{"path" => "Clients/Acme/Calls/2026"})
+      assert html =~ ~s(phx-value-path="Clients/Acme/Calls")
+
+      html = fire(lv, "open_folder", %{"path" => "Clients/Acme"})
+      assert html =~ "Loose note"
+      refute html =~ ~s(aria-label="Back")
+    end
+
     test "the tree starts collapsed, and opens on its chevron", %{conn: conn, me: me} do
       {:ok, lv, html} = mount_panel(conn, me)
       assert html =~ ~r/id="panel-tree-expanded-0"[^>]*class="[^"]*hidden/

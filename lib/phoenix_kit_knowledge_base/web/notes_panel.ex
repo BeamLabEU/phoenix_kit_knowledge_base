@@ -1379,6 +1379,20 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
             <% end %>
           </nav>
           <div class="flex flex-wrap items-center gap-2">
+            <%!-- Up one level, the way a note's arrow goes back to its list.
+                 Only below the panel's own folder: never above `path`. --%>
+            <button
+              :if={@current_folder != @place.folder}
+              type="button"
+              phx-click="open_folder"
+              phx-value-path={parent_path(@current_folder)}
+              phx-target={@myself}
+              class="btn btn-ghost btn-xs"
+              title={gettext("Back")}
+              aria-label={gettext("Back")}
+            >
+              <.icon name="hero-arrow-left" class="w-4 h-4" />
+            </button>
             <h2
               :if={listing_title(assigns)}
               class="text-lg font-bold text-base-content break-words leading-tight min-w-0"
