@@ -72,10 +72,21 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   Rebuilt from `relative_path` rather than stored: the filesystem already owns
   the hierarchy, and a second copy of it in the database is a second thing that
   can disagree with the disk.
+
+  Options:
+
+    * `:under` — only the folders below this one, which becomes the tree's top
+      level (a notes panel's folder; it is not itself in the tree). `""`, the
+      default, is the whole vault.
   """
-  @spec folder_tree(String.t()) :: [map()]
-  def folder_tree(vault_uuid) do
-    folders = list_folders(vault_uuid)
+  @spec folder_tree(String.t(), keyword()) :: [map()]
+  def folder_tree(vault_uuid, opts \\ []) do
+    root = Keyword.get(opts, :under, "")
+
+    folders =
+      if root == "",
+        do: list_folders(vault_uuid),
+        else: list_folders_under(vault_uuid, root)
 
     by_parent =
       Enum.group_by(folders, fn folder ->
@@ -85,7 +96,15 @@ defmodule PhoenixKitKnowledgeBase.Notes do
         end
       end)
 
-    build_tree("", by_parent)
+    build_tree(root, by_parent)
+  end
+
+  defp list_folders_under(vault_uuid, root) do
+    from(f in Folder,
+      where: f.vault_uuid == ^vault_uuid and like(f.relative_path, ^(escape_like(root) <> "/%")),
+      order_by: [asc: f.relative_path]
+    )
+    |> repo().all()
   end
 
   defp build_tree(parent_path, by_parent) do

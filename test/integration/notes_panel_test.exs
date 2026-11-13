@@ -11,6 +11,7 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
+  alias PhoenixKit.Users.{Auth, Permissions, Roles}
   alias PhoenixKitKnowledgeBase.{Notes, Places, Storage}
   alias PhoenixKitKnowledgeBase.Schemas.Vault
   alias PhoenixKitKnowledgeBase.Test.HostLive
@@ -114,6 +115,24 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     test "one visibility hides the switch", %{conn: conn, me: me} do
       {:ok, _lv, html} = mount_panel(conn, me, visibility_options: [:private])
       refute html =~ "Everyone here"
+    end
+
+    test "the top strip is drawn only when it has a switch or a link", %{conn: conn, me: me} do
+      {:ok, _lv, html} = mount_panel(conn, me, visibility_options: [:private])
+      refute html =~ "<header"
+      assert html =~ "Acme"
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+      assert html =~ "<header"
+    end
+
+    test "the label can be turned off", %{conn: conn, me: me} do
+      {:ok, _lv, html} = mount_panel(conn, me, label: "Client notes")
+      assert html =~ ~r{<h2[^>]*>\s*Client notes}
+
+      # The tree still names its top after the panel; the title goes.
+      {:ok, _lv, html} = mount_panel(conn, me, show_label: false, label: "Client notes")
+      refute html =~ ~r{<h2[^>]*>\s*Client notes}
     end
   end
 
@@ -397,6 +416,48 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       {:ok, _lv, html} = mount_panel(conn, me)
       refute html =~ "Open the whole vault"
     end
+
+    test "the vault link is off unless asked for, even for an admin", %{conn: conn, me: me} do
+      {:ok, _} = Roles.assign_role(me, "Admin")
+      # The module is not registered in the test app, so its own key would be
+      # refused; the wildcard key holds every module's.
+      admin = Roles.get_role_by_name("Admin")
+      {:ok, _} = Permissions.grant_permission(admin.uuid, "*")
+      # Their own vault: they own it, so the admin page would open for them.
+      note!(me, "Anything", @path, :private)
+
+      {:ok, _lv, html} = mount_panel(conn, me, default_visibility: :private)
+      refute html =~ "Open the whole vault"
+
+      {:ok, _lv, html} = mount_panel(conn, me, default_visibility: :private, vault_link: true)
+      assert html =~ "Open the whole vault"
+    end
+
+    test "the vault link stays hidden from a plain user who asks for it", %{conn: conn, me: me} do
+      note!(me, "Anything")
+      {:ok, _lv, html} = mount_panel(conn, me, vault_link: true)
+      refute html =~ "Open the whole vault"
+    end
+
+    test "the list says who wrote each note and who changed it last", %{
+      conn: conn,
+      me: me,
+      other: other
+    } do
+      {:ok, _} = Auth.update_user_profile(me, %{"first_name" => "Ada", "last_name" => "Lovelace"})
+
+      {:ok, _} =
+        Auth.update_user_profile(other, %{"first_name" => "Grace", "last_name" => "Hopper"})
+
+      {vault, note} = note!(me, "Minutes")
+      {:ok, _} = Notes.update_content(vault, note, "changed", actor_uuid: other.uuid)
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+      assert html =~ "Created"
+      assert html =~ "Modified"
+      assert html =~ "Ada Lovelace"
+      assert html =~ "Grace Hopper"
+    end
   end
 
   describe "writing" do
@@ -645,6 +706,286 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       leaf(lv, {:leaf_mode_changed, %{editor_id: "x", mode: :markdown}})
       leaf(lv, {:leaf_focus, %{editor_id: "x"}})
       assert Process.alive?(lv.pid)
+    end
+  end
+
+  describe "renaming from the title" do
+    setup %{me: me} do
+      {vault, note} = note!(me, "Call notes")
+      %{vault: vault, note: note}
+    end
+
+    test "the title reads as the way to rename", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      html = fire(lv, "open_note", %{"uuid" => note.uuid})
+      assert html =~ "Click to rename"
+      assert html =~ "Rename “Call notes”"
+    end
+
+    test "leaving the field saves the new title", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      html = fire(lv, "rename_note", %{"value" => "Call with Acme"})
+      assert html =~ "Call with Acme"
+      refute html =~ ~s(id="panel-rename")
+    end
+
+    test "an unchanged title just closes the field", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      html = fire(lv, "rename_note", %{"value" => "Call notes "})
+      refute html =~ ~s(id="panel-rename")
+      refute html =~ "already here"
+    end
+
+    test "a blur after Escape renames nothing", %{conn: conn, me: me, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      fire(lv, "start_rename")
+      fire(lv, "cancel")
+      html = fire(lv, "rename_note", %{"value" => "Typed then abandoned"})
+      refute html =~ "Typed then abandoned"
+      assert Notes.get_note(note.vault_uuid, note.uuid).title == "Call notes"
+    end
+  end
+
+  describe "the folder tree and drag and drop" do
+    # The panel's folder is "Clients/Acme" in the "CRM" vault.
+    setup %{me: me} do
+      {vault, note} = note!(me, "Loose note")
+      {:ok, calls} = Notes.create_folder(vault, "Clients/Acme", "Calls")
+      {:ok, _} = Notes.create_folder(vault, "Clients/Acme/Calls", "2026")
+      {:ok, outside} = Notes.create_folder(vault, "Clients", "Globex")
+      %{vault: vault, note: note, calls: calls, outside: outside}
+    end
+
+    defp folder!(vault, path), do: Notes.get_folder_by_path(vault.uuid, path)
+
+    test "the tree shows the panel's folders and notes, and nothing above them", %{
+      conn: conn,
+      me: me,
+      calls: calls,
+      outside: outside
+    } do
+      {:ok, _lv, html} = mount_panel(conn, me)
+      assert html =~ ~s(id="panel-tree")
+      assert html =~ ~s(phx-hook="MediaDragDrop")
+      assert html =~ ~s(data-drop-folder="#{calls.uuid}")
+      assert html =~ ~s(data-draggable-file=)
+      refute html =~ outside.uuid
+      refute html =~ "Globex"
+    end
+
+    test "a folder has a back arrow up one level; the panel's own folder has none", %{
+      conn: conn,
+      me: me,
+      calls: calls
+    } do
+      back = ~s(phx-value-path="Clients/Acme")
+      {:ok, lv, html} = mount_panel(conn, me)
+      refute html =~ ~s(aria-label="Back")
+
+      html = fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      assert html =~ ~s(aria-label="Back")
+      assert html =~ back
+
+      # Two levels down, it goes up one.
+      html = fire(lv, "open_folder", %{"path" => "Clients/Acme/Calls/2026"})
+      assert html =~ ~s(phx-value-path="Clients/Acme/Calls")
+
+      html = fire(lv, "open_folder", %{"path" => "Clients/Acme"})
+      assert html =~ "Loose note"
+      refute html =~ ~s(aria-label="Back")
+    end
+
+    test "the tree starts collapsed, and opens on its chevron", %{conn: conn, me: me} do
+      {:ok, lv, html} = mount_panel(conn, me)
+      assert html =~ ~r/id="panel-tree-expanded-0"[^>]*class="[^"]*hidden/
+      refute html =~ ~r/id="panel-tree-collapsed-0"[^>]*class="[^"]*hidden/
+
+      html = fire(lv, "toggle_sidebar")
+      refute html =~ ~r/id="panel-tree-expanded-0"[^>]*class="[^"]*hidden/
+    end
+
+    test "a folder's row says how much is in it and who changed it last", %{
+      conn: conn,
+      me: me,
+      other: other,
+      vault: vault
+    } do
+      {:ok, _} =
+        Auth.update_user_profile(other, %{"first_name" => "Grace", "last_name" => "Hopper"})
+
+      {:ok, inner} =
+        Notes.create_note(
+          vault,
+          %{title: "Deep", folder_path: "Clients/Acme/Calls/2026"},
+          me.uuid
+        )
+
+      {:ok, _} = Notes.update_content(vault, inner, "changed", actor_uuid: other.uuid)
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+
+      [row] =
+        Regex.run(
+          ~r/<tr[^>]*id="panel-folder-[^"]+"(?:(?!<\/tr>).)*Calls(?:(?!<\/tr>).)*<\/tr>/s,
+          html
+        )
+
+      assert row =~ "1 note"
+      assert row =~ "Grace Hopper"
+    end
+
+    test "a folder is opened from the tree, and a forged one is ignored", %{
+      conn: conn,
+      me: me,
+      calls: calls,
+      outside: outside
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      html = fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      assert html =~ "2026"
+
+      html = fire(lv, "navigate_folder", %{"folder-uuid" => outside.uuid})
+      assert html =~ "2026"
+      refute html =~ "Globex"
+
+      html = fire(lv, "navigate_root")
+      assert html =~ "Loose note"
+    end
+
+    test "a note dropped on a folder moves there on disk", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+
+      moved = Notes.get_note(vault.uuid, note.uuid)
+      assert moved.folder_path == "Clients/Acme/Calls"
+      assert File.exists?(Path.join(Storage.vault_path(vault.directory), moved.relative_path))
+
+      # …and back to the top of the panel ("" is the hook's name for it).
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => ""})
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme"
+    end
+
+    test "nothing is moved out of the panel's folder", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls,
+      outside: outside
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => outside.uuid})
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme"
+
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => calls.uuid,
+        "target_uuid" => outside.uuid
+      })
+
+      assert folder!(vault, "Clients/Acme/Calls")
+
+      # A folder outside cannot be pulled in either.
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => outside.uuid,
+        "target_uuid" => calls.uuid
+      })
+
+      assert folder!(vault, "Clients/Globex")
+    end
+
+    test "a folder dropped on another moves with what is in it", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, archive} = Notes.create_folder(vault, "Clients/Acme", "Archive")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => calls.uuid,
+        "target_uuid" => archive.uuid
+      })
+
+      assert folder!(vault, "Clients/Acme/Archive/Calls")
+      assert folder!(vault, "Clients/Acme/Archive/Calls/2026")
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme/Archive/Calls"
+    end
+
+    test "a folder is not dropped into itself", %{conn: conn, me: me, vault: vault, calls: calls} do
+      inner = folder!(vault, "Clients/Acme/Calls/2026")
+      {:ok, lv, _} = mount_panel(conn, me)
+
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => calls.uuid,
+        "target_uuid" => inner.uuid
+      })
+
+      assert folder!(vault, "Clients/Acme/Calls")
+    end
+
+    test "the open note follows its folder, and is saved where it went", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, archive} = Notes.create_folder(vault, "Clients/Acme", "Archive")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => calls.uuid,
+        "target_uuid" => archive.uuid
+      })
+
+      id = NotesPanel.editor_id("panel", note)
+
+      html =
+        leaf(lv, {:leaf_changed, %{editor_id: id, markdown: "moved, then typed", dirty: true}})
+
+      assert html =~ "Saved"
+      assert file(vault, Notes.get_note(vault.uuid, note.uuid)) == "moved, then typed"
+    end
+
+    test "a folder is renamed from the tree", %{conn: conn, me: me, vault: vault, calls: calls} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "start_rename_folder", %{"folder-uuid" => calls.uuid})
+      fire(lv, "rename_folder", %{"folder_uuid" => calls.uuid, "name" => "Meetings"})
+      assert folder!(vault, "Clients/Acme/Meetings")
+      refute folder!(vault, "Clients/Acme/Calls")
+    end
+
+    test "someone who may only read gets no drag and no moves", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      with_hook({Hooks, :view_only}, fn ->
+        {:ok, lv, html} = mount_panel(conn, me)
+        refute html =~ "MediaDragDrop"
+        refute html =~ "data-draggable-file"
+
+        fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+        assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme"
+      end)
     end
   end
 end

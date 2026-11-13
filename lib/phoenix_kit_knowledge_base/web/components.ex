@@ -21,6 +21,7 @@ defmodule PhoenixKitKnowledgeBase.Web.Components do
   attr(:visibility_options, :list, default: [:private, :shared])
   attr(:default_visibility, :atom, default: :shared, values: [:private, :shared])
   attr(:poll, :integer, default: 5_000)
+  attr(:vault_link, :boolean, default: false)
   attr(:class, :string, default: nil)
 
   @doc "Notes for one place, kept in a vault folder named by `path`. See the module doc."

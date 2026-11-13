@@ -28,6 +28,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       (see `Places`); private ones are each person's own
     * `default_visibility` — `:shared` (default)
     * `poll` — ms between refreshes of the list, default `5_000`; `0` turns it off
+    * `vault_link` — `false` (default). `true` adds a button at the top right
+      that opens the whole vault on the admin pages, shown only to someone who
+      may open it there
     * `class`
 
   ## How it runs inside someone else's page
@@ -46,8 +49,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   use PhoenixKitWeb, :live_component
   use Gettext, backend: PhoenixKitKnowledgeBase.Gettext
 
+  import PhoenixKitWeb.Components.FolderExplorer, only: [folder_explorer: 1]
+
+  alias Phoenix.LiveView.JS
+  alias PhoenixKit.Users.Auth
   alias PhoenixKit.Users.Auth.Scope
-  alias PhoenixKitKnowledgeBase.{Errors, Links, Markdown, Notes, Paths, Places, Vaults}
+  alias PhoenixKitKnowledgeBase.{Errors, Links, Markdown, Notes, Paths, Places, Storage, Vaults}
   alias PhoenixKitKnowledgeBase.Schemas.Note
   alias PhoenixKitKnowledgeBase.Web.VaultLive
 
@@ -145,6 +152,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:visibility_options, options)
     |> assign(:default_visibility, Map.get(assigns, :default_visibility, :shared))
     |> assign(:poll, Map.get(assigns, :poll, @default_poll))
+    |> assign(:vault_link?, Map.get(assigns, :vault_link, false) == true)
     |> assign(:class, Map.get(assigns, :class))
   end
 
@@ -179,10 +187,24 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:notice, nil)
     |> assign(:vault, nil)
     |> assign(:folders, [])
+    |> assign(:folder_stats, %{})
     |> assign(:notes, [])
+    |> assign(:people, %{})
     |> assign(:admin_href, nil)
     |> assign(:admin_href_for, nil)
     |> assign(:timer_armed?, false)
+    # Core's FolderExplorer, rooted at the panel's folder. `expanded_folders`
+    # holds folder uuids, which is the component's contract.
+    |> assign(:tree, [])
+    |> assign(:tree_folders, %{})
+    |> assign(:tree_items, %{})
+    |> assign(:expanded_folders, MapSet.new())
+    # Collapsed until opened: the list is what the panel is for, and on a
+    # page the tree's 240px is taken from it.
+    |> assign(:sidebar_collapsed, true)
+    |> assign(:renaming_folder, nil)
+    |> assign(:renaming_source, nil)
+    |> assign(:renaming_text, "")
   end
 
   # The path and the visibility together name the place. Re-parsed whenever
@@ -226,17 +248,109 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign_admin_href()
   end
 
-  defp load_listing(%{assigns: %{vault: nil}} = socket),
-    do: socket |> assign(:folders, []) |> assign(:notes, [])
+  defp load_listing(%{assigns: %{vault: nil}} = socket) do
+    socket
+    |> assign(:folders, [])
+    |> assign(:folder_stats, %{})
+    |> assign(:notes, [])
+    |> assign(:tree, [])
+    |> assign(:tree_folders, %{})
+    |> assign(:tree_items, %{})
+  end
 
-  # Runs on every poll: one level of folders, and notes without their bodies —
-  # the listing shows names and dates, and the open note is read on its own.
+  # Runs on every poll. Two queries: every folder below the panel's, and every
+  # note in it without its body (the open note is read on its own). The tree
+  # shows all of them; the listing is the current folder's share.
   defp load_listing(socket) do
-    %{vault: vault, current_folder: current} = socket.assigns
+    %{vault: vault, current_folder: current, place: place} = socket.assigns
+
+    tree = Notes.folder_tree(vault.uuid, under: place.folder)
+    folders = flatten_tree(tree)
+    all_notes = Notes.list_notes(vault.uuid, under: place.folder, content: false)
+    notes = Enum.filter(all_notes, &(&1.folder_path == current))
+
+    shown_folders = Enum.filter(folders, &(parent_path(&1.relative_path) == current))
+    folder_stats = folder_stats(shown_folders, all_notes)
 
     socket
-    |> assign(:folders, Notes.list_folders(vault.uuid, parent: current))
-    |> assign(:notes, Notes.list_notes(vault.uuid, folder_path: current, content: false))
+    |> assign(:folders, shown_folders)
+    |> assign(:folder_stats, folder_stats)
+    |> assign(:notes, notes)
+    |> assign(:tree, tree)
+    |> assign(:tree_folders, Map.new(folders, &{&1.uuid, &1}))
+    |> assign(:tree_items, tree_items(all_notes, folders, place.folder))
+    |> assign_people(notes ++ Enum.flat_map(Map.values(folder_stats), &List.wrap(&1.latest)))
+  end
+
+  # What a folder's row says besides its name: how many notes are in it (all
+  # the way down) and the latest change among them — when, and by whom. Read
+  # from the notes the poll has already loaded, so it costs no query. A folder
+  # records no author of its own (it is a directory on disk), so its
+  # "Created" column has a date and no name.
+  defp folder_stats(folders, notes) do
+    Map.new(folders, fn folder ->
+      prefix = folder.relative_path <> "/"
+
+      inside =
+        Enum.filter(
+          notes,
+          &(&1.folder_path == folder.relative_path or String.starts_with?(&1.folder_path, prefix))
+        )
+
+      {folder.uuid,
+       %{
+         count: length(inside),
+         latest: Enum.max_by(inside, & &1.updated_at, DateTime, fn -> nil end)
+       }}
+    end)
+  end
+
+  defp flatten_tree(nodes),
+    do: Enum.flat_map(nodes, &[&1.folder | flatten_tree(&1.children)])
+
+  defp parent_path(relative_path) do
+    case Path.dirname(relative_path) do
+      "." -> ""
+      parent -> parent
+    end
+  end
+
+  # The explorer's leaves: notes keyed by their folder's uuid, the panel's own
+  # folder as `"root"`. Plain maps — the component reads `:id` off each one for
+  # `data-draggable-file`.
+  defp tree_items(notes, folders, root) do
+    uuid_by_path = Map.new(folders, &{&1.relative_path, &1.uuid})
+
+    Enum.group_by(
+      notes,
+      fn note ->
+        if note.folder_path == root, do: "root", else: Map.get(uuid_by_path, note.folder_path)
+      end,
+      &%{id: &1.uuid, label: &1.title}
+    )
+  end
+
+  # Who wrote and who last changed each note, by name. Names are kept across
+  # polls and only the people not yet known are read, so a listing that does
+  # not change costs no query here. A uuid with no user behind it (deleted, or
+  # written from outside the app) is remembered as unknown rather than asked
+  # about again on every poll.
+  defp assign_people(socket, notes) do
+    known = socket.assigns.people
+
+    missing =
+      notes
+      |> Enum.flat_map(&[&1.created_by, &1.updated_by])
+      |> Enum.reject(&(is_nil(&1) or Map.has_key?(known, &1)))
+      |> Enum.uniq()
+
+    if missing == [] do
+      socket
+    else
+      found = Map.new(Auth.get_users_by_uuids(missing), &{&1.uuid, Vaults.user_label(&1)})
+      fetched = Map.new(missing, &{&1, Map.get(found, &1)})
+      assign(socket, :people, Map.merge(known, fetched))
+    end
   end
 
   # Only for someone who could open the vault on the admin pages anyway: the
@@ -252,6 +366,10 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # types, not a fault here — a panel is given a user, not a scope, so it has to
   # build one.
   @dialyzer {:nowarn_function, assign_admin_href: 1}
+  # Not asked for: no link, and no `Scope.for_user/1` to build one.
+  defp assign_admin_href(%{assigns: %{vault_link?: false}} = socket),
+    do: socket |> assign(:admin_href, nil) |> assign(:admin_href_for, nil)
+
   defp assign_admin_href(%{assigns: %{vault: nil}} = socket),
     do: socket |> assign(:admin_href, nil) |> assign(:admin_href_for, nil)
 
@@ -338,10 +456,142 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   def handle_event("open_folder", %{"path" => path}, socket) do
     with_access(socket, :view, fn socket ->
-      if Places.within?(socket.assigns.place, path) do
-        socket |> assign(:current_folder, path) |> assign(:creating, nil) |> load_listing()
+      if Places.within?(socket.assigns.place, path),
+        do: show_folder(socket, path),
+        else: socket
+    end)
+  end
+
+  # ── Events: core's FolderExplorer ─────────────────────────────────────────
+  #
+  # Its event names are MediaBrowser's and cannot be renamed by a consumer, so
+  # the panel speaks them. Folders are named by uuid there and by path
+  # everywhere else; `@tree_folders` holds only folders below the panel's own,
+  # so a uuid not in it is outside the fence (or forged) and does nothing.
+
+  def handle_event("navigate_folder", %{"folder-uuid" => uuid}, socket) do
+    with_access(socket, :view, fn socket ->
+      case Map.get(socket.assigns.tree_folders, uuid) do
+        nil ->
+          socket
+
+        folder ->
+          socket
+          |> update(:expanded_folders, &MapSet.put(&1, uuid))
+          |> show_folder(folder.relative_path)
+      end
+    end)
+  end
+
+  def handle_event("navigate_root", _params, socket) do
+    with_access(socket, :view, &show_folder(&1, &1.assigns.place.folder))
+  end
+
+  def handle_event("toggle_folder_expand", %{"folder-uuid" => uuid}, socket)
+      when is_binary(uuid) do
+    expanded = socket.assigns.expanded_folders
+
+    {:noreply,
+     assign(
+       socket,
+       :expanded_folders,
+       if(MapSet.member?(expanded, uuid),
+         do: MapSet.delete(expanded, uuid),
+         else: MapSet.put(expanded, uuid)
+       )
+     )}
+  end
+
+  def handle_event("toggle_sidebar", _params, socket),
+    do: {:noreply, update(socket, :sidebar_collapsed, &(not &1))}
+
+  # The explorer's "+": a folder in the folder being looked at.
+  def handle_event("open_new_folder_modal", _params, socket) do
+    handle_event("start", %{"what" => "folder"}, socket)
+  end
+
+  def handle_event("start_rename_folder", %{"folder-uuid" => uuid} = params, socket) do
+    with_access(socket, :edit, fn socket ->
+      case Map.get(socket.assigns.tree_folders, uuid) do
+        nil ->
+          socket
+
+        folder ->
+          socket
+          |> assign(:renaming_folder, uuid)
+          |> assign(:renaming_source, params["source"])
+          |> assign(:renaming_text, folder.name)
+      end
+    end)
+  end
+
+  def handle_event("rename_folder_input", %{"name" => name}, socket) when is_binary(name),
+    do: {:noreply, assign(socket, :renaming_text, name)}
+
+  def handle_event("cancel_rename_folder", _params, socket),
+    do: {:noreply, cancel_folder_rename(socket)}
+
+  # A rename is a move to a sibling path: same parent, new last segment.
+  def handle_event("rename_folder", %{"folder_uuid" => uuid, "name" => name}, socket)
+      when is_binary(name) do
+    with_access(socket, :edit, fn socket ->
+      with %{} = folder <- Map.get(socket.assigns.tree_folders, uuid),
+           {:ok, clean} <- Storage.validate_filename(name),
+           target = Path.join(parent_path(folder.relative_path), clean),
+           {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
+        socket |> cancel_folder_rename() |> after_folder_move(folder.relative_path, target)
       else
-        socket
+        {:error, :unchanged} ->
+          cancel_folder_rename(socket)
+
+        nil ->
+          cancel_folder_rename(socket)
+
+        {:error, reason} ->
+          socket |> cancel_folder_rename() |> notice(:error, error_message(reason))
+      end
+    end)
+  end
+
+  # ── Events: drag and drop (core's `MediaDragDrop` hook) ───────────────────
+  #
+  # The hook looks for drop targets across the whole document, so a note dragged
+  # from this panel can be let go over another panel's folder — the target is
+  # checked against this panel's fence like everything else. `""` is the hook's
+  # name for the top of the tree: this panel's folder.
+
+  def handle_event("move_file_to_folder", %{"file_uuid" => uuid} = params, socket) do
+    with_access(socket, :edit, fn socket ->
+      with {:ok, target} <- drop_target(socket, params["folder_uuid"]),
+           %Note{} = note <- fenced_note(socket, uuid),
+           true <- note.folder_path != target,
+           {:ok, moved} <-
+             Notes.move_note(socket.assigns.vault, note, target,
+               actor_uuid: socket.assigns.user.uuid
+             ) do
+        socket |> follow_moved_note(moved) |> load_listing()
+      else
+        {:error, reason} -> notice(socket, :error, error_message(reason))
+        _ -> socket
+      end
+    end)
+  end
+
+  def handle_event("move_folder_to_folder", %{"folder_uuid" => uuid} = params, socket) do
+    with_access(socket, :edit, fn socket ->
+      with %{} = folder <- Map.get(socket.assigns.tree_folders, uuid),
+           {:ok, parent} <- drop_target(socket, params["target_uuid"]),
+           # Into itself or below itself: nowhere to put it.
+           false <-
+             parent == folder.relative_path or
+               String.starts_with?(parent, folder.relative_path <> "/"),
+           target = Path.join(parent, folder.name),
+           {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
+        after_folder_move(socket, folder.relative_path, target)
+      else
+        {:error, :unchanged} -> socket
+        {:error, reason} -> notice(socket, :error, error_message(reason))
+        _ -> socket
       end
     end)
   end
@@ -401,14 +651,13 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     with_access(socket, :edit, &assign(&1, :renaming?, true))
   end
 
-  def handle_event("rename_note", %{"title" => title}, socket) do
-    with_open_note(socket, :edit, fn socket, vault, note ->
-      case Notes.rename_note(vault, note, title, actor_uuid: socket.assigns.user.uuid) do
-        {:ok, renamed} -> socket |> assign(:note, renamed) |> assign(:renaming?, false)
-        {:error, reason} -> notice(socket, :error, error_message(reason))
-      end
-    end)
-  end
+  # From Enter, or from leaving the field (`phx-blur` sends `value`). A blur
+  # that arrives after Escape already cancelled finds `renaming?` off and does
+  # nothing; an unchanged title just closes the field.
+  def handle_event("rename_note", %{"value" => title}, socket),
+    do: if(socket.assigns.renaming?, do: rename(socket, title), else: {:noreply, socket})
+
+  def handle_event("rename_note", %{"title" => title}, socket), do: rename(socket, title)
 
   def handle_event("trash_note", _params, socket) do
     with_open_note(socket, :edit, fn socket, vault, note ->
@@ -486,6 +735,102 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # runs in the host's process: a clause error here would take the host's whole
   # page down.
   def handle_event(_event, _params, socket), do: {:noreply, socket}
+
+  defp rename(socket, title) when is_binary(title) do
+    with_open_note(socket, :edit, fn socket, vault, note ->
+      if String.trim(title) == note.title,
+        do: assign(socket, :renaming?, false),
+        else: apply_rename(socket, vault, note, title)
+    end)
+  end
+
+  defp rename(socket, _title), do: {:noreply, socket}
+
+  defp apply_rename(socket, vault, note, title) do
+    case Notes.rename_note(vault, note, title, actor_uuid: socket.assigns.user.uuid) do
+      {:ok, renamed} -> socket |> assign(:note, renamed) |> assign(:renaming?, false)
+      {:error, reason} -> notice(socket, :error, error_message(reason))
+    end
+  end
+
+  # The listing of one folder. Leaving an open note for it is what clicking a
+  # folder in a file manager does; autosave has already written what was typed.
+  defp show_folder(socket, path) do
+    socket
+    |> close_note()
+    |> expand_branch(path)
+    |> assign(:current_folder, path)
+    |> assign(:creating, nil)
+    |> load_listing()
+  end
+
+  # Open the tree down to `path`, so it shows where the listing is even when it
+  # was reached from the list or a crumb. Only on navigating: collapsing a
+  # branch afterwards stays collapsed.
+  defp expand_branch(socket, path) do
+    on_branch =
+      for {uuid, folder} <- socket.assigns.tree_folders,
+          path == folder.relative_path or String.starts_with?(path, folder.relative_path <> "/"),
+          do: uuid
+
+    update(socket, :expanded_folders, &MapSet.union(&1, MapSet.new(on_branch)))
+  end
+
+  defp drop_target(socket, target) when target in [nil, "", "root"],
+    do: {:ok, socket.assigns.place.folder}
+
+  defp drop_target(socket, uuid) do
+    case Map.get(socket.assigns.tree_folders, uuid) do
+      nil -> :error
+      folder -> {:ok, folder.relative_path}
+    end
+  end
+
+  defp cancel_folder_rename(socket) do
+    socket
+    |> assign(:renaming_folder, nil)
+    |> assign(:renaming_source, nil)
+    |> assign(:renaming_text, "")
+  end
+
+  # A folder moved from `from` to `to`: the listing follows it if it was being
+  # looked at (or something inside it was), and an open note inside it is
+  # re-read — `save/3` writes against `@note.relative_path`, which just changed.
+  defp after_folder_move(socket, from, to) do
+    current = socket.assigns.current_folder
+
+    socket =
+      cond do
+        current == from ->
+          assign(socket, :current_folder, to)
+
+        String.starts_with?(current, from <> "/") ->
+          assign(socket, :current_folder, to <> String.replace_prefix(current, from, ""))
+
+        true ->
+          socket
+      end
+
+    socket = load_listing(socket)
+
+    case socket.assigns.note do
+      %Note{uuid: uuid} -> follow_moved_note(socket, fenced_note(socket, uuid))
+      nil -> socket
+    end
+  end
+
+  # The open note's row after a move: same bytes, new path. Only the row is
+  # taken — the editor's buffer is untouched.
+  defp follow_moved_note(
+         %{assigns: %{note: %Note{uuid: uuid}}} = socket,
+         %Note{uuid: uuid} = fresh
+       ),
+       do: assign(socket, :note, fresh)
+
+  defp follow_moved_note(%{assigns: %{note: %Note{}}} = socket, nil),
+    do: socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
+
+  defp follow_moved_note(socket, _moved), do: socket
 
   @numbered_attempts 20
 
@@ -868,12 +1213,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     ~H"""
     <section
       id={@id}
-      class={["rounded-box border border-base-300 bg-base-100 p-3 sm:p-4 space-y-3 min-w-0", @class]}
+      class={[
+        "@container/panel rounded-box border border-base-300 bg-base-100 p-3 sm:p-4 space-y-3 min-w-0",
+        @class
+      ]}
     >
-      <header class="flex flex-wrap items-center justify-between gap-2">
-        <h2 :if={@show_label?} class="font-semibold truncate min-w-0">
-          {@label || List.last(@place.path)}
-        </h2>
+      <%!-- The visibility switch and the vault link. The label is the list's
+           own title now (core's media header); nothing to put here, no strip. --%>
+      <header
+        :if={length(@visibility_options) > 1 or not is_nil(@admin_href)}
+        class="flex flex-wrap items-center justify-between gap-2"
+      >
         <div class="flex items-center gap-1 ml-auto">
           <div
             :if={length(@visibility_options) > 1}
@@ -932,13 +1282,70 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         {gettext("You do not have access to these notes.")}
       </p>
 
-      <%= if @can_view? do %>
-        <%= if @note do %>
-          {render_note(assigns)}
-        <% else %>
-          {render_listing(assigns)}
-        <% end %>
-      <% end %>
+      <%!--
+        Core's drag-and-drop hook, as the media page uses it: it finds the
+        `data-draggable-*` rows (tree and list) and the `data-drop-folder`
+        targets, and pushes `move_file_to_folder` / `move_folder_to_folder` to
+        the component this element is in. Core registers it, so this module
+        still ships no JavaScript.
+      --%>
+      <div
+        :if={@can_view?}
+        id={"#{@id}-body"}
+        phx-hook={if @can_edit?, do: "MediaDragDrop"}
+        class="flex min-w-0 items-stretch"
+      >
+        <%!-- The tree needs room: shown once the panel itself is wide enough
+             (a container query, not the window), the breadcrumbs otherwise. --%>
+        <.folder_explorer
+          id={"#{@id}-tree"}
+          myself={@myself}
+          class="hidden @2xl/panel:block"
+          folder_tree={@tree}
+          current_folder={tree_current(@tree_folders, @current_folder)}
+          expanded_folders={@expanded_folders}
+          scope_folder_id={@id}
+          scope_folder_name={@label || List.last(@place.path)}
+          renaming_folder={@renaming_folder}
+          renaming_source={@renaming_source}
+          renaming_text={@renaming_text}
+          sidebar_collapsed={@sidebar_collapsed}
+          show_create={@can_edit?}
+          show_all_files={false}
+          show_trash={false}
+          show_rename={@can_edit?}
+          enable_drag={@can_edit?}
+          items={@tree_items}
+        >
+          <:item :let={entry}>
+            <button
+              type="button"
+              phx-click="open_note"
+              phx-value-uuid={entry.id}
+              phx-target={@myself}
+              class={[
+                "block w-full truncate py-1 text-left text-sm",
+                if(@note && @note.uuid == entry.id,
+                  do: "font-medium text-primary",
+                  else: "text-base-content/70 hover:text-base-content"
+                )
+              ]}
+            >
+              {entry.label}
+            </button>
+          </:item>
+        </.folder_explorer>
+
+        <%!-- Its own container: beside the tree, the table's columns answer to
+             the room this column has, not to the whole panel. --%>
+        <div class="@container min-w-0 flex-1">
+          <%= if @note do %>
+            {render_note(assigns)}
+          <% else %>
+            {render_listing(assigns)}
+          <% end %>
+        </div>
+      </div>
     </section>
     """
   end
@@ -946,57 +1353,172 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp render_listing(assigns) do
     ~H"""
     <div class="space-y-2">
-      <nav
-        :if={crumbs(@place, @current_folder) != []}
-        class="flex flex-wrap items-center gap-1 text-sm"
-        aria-label={gettext("Folder")}
-      >
-        <%= for {crumb, index} <- Enum.with_index(crumbs(@place, @current_folder)) do %>
-          <span :if={index > 0} class="text-base-content/40">/</span>
-          <button
-            type="button"
-            phx-click="open_folder"
-            phx-value-path={crumb.path}
-            phx-target={@myself}
-            class="link link-hover truncate max-w-[12rem]"
+      <%!-- Core's media header: a tinted block fading into the page, the
+           folder's name in bold, the primary action top right. --%>
+      <div class="relative rounded-xl">
+        <div class="absolute inset-0 rounded-xl bg-gradient-to-br from-base-200 to-base-300"></div>
+        <div class="absolute inset-0 rounded-xl bg-gradient-to-t from-base-100 via-base-100/60 to-transparent">
+        </div>
+        <div class="relative z-10 p-3 sm:p-4 flex flex-col gap-1">
+          <nav
+            :if={crumbs(@place, @current_folder) != []}
+            class="flex flex-wrap items-center gap-1 text-sm @2xl/panel:hidden"
+            aria-label={gettext("Folder")}
           >
-            {crumb.label}
-          </button>
-        <% end %>
-      </nav>
+            <%= for {crumb, index} <- Enum.with_index(crumbs(@place, @current_folder)) do %>
+              <span :if={index > 0} class="text-base-content/40">/</span>
+              <button
+                type="button"
+                phx-click="open_folder"
+                phx-value-path={crumb.path}
+                phx-target={@myself}
+                class="link link-hover truncate max-w-[12rem]"
+              >
+                {crumb.label}
+              </button>
+            <% end %>
+          </nav>
+          <div class="flex flex-wrap items-center gap-2">
+            <%!-- Up one level, the way a note's arrow goes back to its list.
+                 Only below the panel's own folder: never above `path`. --%>
+            <button
+              :if={@current_folder != @place.folder}
+              type="button"
+              phx-click="open_folder"
+              phx-value-path={parent_path(@current_folder)}
+              phx-target={@myself}
+              class="btn btn-ghost btn-xs"
+              title={gettext("Back")}
+              aria-label={gettext("Back")}
+            >
+              <.icon name="hero-arrow-left" class="w-4 h-4" />
+            </button>
+            <h2
+              :if={listing_title(assigns)}
+              class="text-lg font-bold text-base-content break-words leading-tight min-w-0"
+            >
+              {listing_title(assigns)}
+            </h2>
+            <div :if={@can_edit? and is_nil(@creating)} class="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                phx-click="start"
+                phx-value-what="folder"
+                phx-target={@myself}
+                class="btn btn-sm btn-ghost gap-2"
+                title={gettext("New folder")}
+              >
+                <.icon name="hero-folder-plus" class="w-4 h-4" />
+                <span class="hidden @sm:inline">{gettext("Folder")}</span>
+              </button>
+              <button
+                type="button"
+                phx-click="new_note"
+                phx-target={@myself}
+                class="btn btn-sm btn-primary gap-2"
+              >
+                <.icon name="hero-plus" class="w-4 h-4" /> {gettext("Note")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
-      <ul class="divide-y divide-base-200">
-        <li :for={folder <- @folders}>
-          <button
-            type="button"
+      <%!-- A table like core's media list. The panel is often a sidebar, so
+           the columns follow the panel's own width (a container query), not
+           the window's: narrow, they fold into one line under the name. --%>
+      <table :if={@folders != [] or @notes != []} class="table table-sm">
+        <thead class="hidden @sm:table-header-group">
+          <tr>
+            <th>{gettext("Name")}</th>
+            <th>{gettext("Created")}</th>
+            <th>{gettext("Modified")}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <%!-- Ids on every row: without them LiveView reuses a row for
+               whatever lands in its place — a folder's row becomes a note's
+               after opening the folder — and the drag hook's listeners on
+               it come along. --%>
+          <tr
+            :for={folder <- @folders}
+            id={"#{@id}-folder-#{folder.uuid}"}
             phx-click="open_folder"
             phx-value-path={folder.relative_path}
             phx-target={@myself}
-            class="flex w-full items-center gap-2 py-2 text-left hover:bg-base-200 rounded px-1"
+            data-drop-folder={@can_edit? && folder.uuid}
+            data-draggable-folder={@can_edit? && folder.uuid}
+            class="hover cursor-pointer"
           >
-            <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-base-content/60" />
-            <span class="truncate">{folder.name}</span>
-          </button>
-        </li>
-        <li :for={note <- @notes}>
-          <button
-            type="button"
+            <td class="min-w-0">
+              <button
+                type="button"
+                phx-click="open_folder"
+                phx-value-path={folder.relative_path}
+                phx-target={@myself}
+                class="flex w-full min-w-0 items-center gap-2 text-left"
+              >
+                <.icon name="hero-folder" class="w-4 h-4 shrink-0 text-base-content/60" />
+                <span class="truncate font-medium">{folder.name}</span>
+              </button>
+              <%!-- The same two lines a note's row has, so the rows are one
+                   height: the folder's size, and its latest change on a
+                   narrow panel. --%>
+              <div class="pl-6 text-xs text-base-content/50 truncate">
+                {ngettext("%{count} note", "%{count} notes", @folder_stats[folder.uuid].count)}<span
+                  :if={@folder_stats[folder.uuid].latest}
+                  class="@sm:hidden"
+                > · {gettext("Modified %{date}",
+                  date: short_date(@folder_stats[folder.uuid].latest.updated_at)
+                )}</span>
+              </div>
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              {render_stamp(%{at: folder.inserted_at, by: nil, people: @people})}
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              <%= if latest = @folder_stats[folder.uuid].latest do %>
+                {render_stamp(%{at: latest.updated_at, by: latest.updated_by, people: @people})}
+              <% else %>
+                {render_stamp(%{at: folder.updated_at, by: nil, people: @people})}
+              <% end %>
+            </td>
+          </tr>
+          <tr
+            :for={note <- @notes}
+            id={"#{@id}-row-#{note.uuid}"}
             phx-click="open_note"
             phx-value-uuid={note.uuid}
             phx-target={@myself}
-            class="flex w-full items-center gap-2 py-2 text-left hover:bg-base-200 rounded px-1"
+            data-draggable-file={@can_edit? && note.uuid}
+            class="hover cursor-pointer"
           >
-            <.icon name="hero-document-text" class="w-4 h-4 shrink-0 text-base-content/60" />
-            <span class="truncate flex-1">{note.title}</span>
-            <time
-              class="text-xs text-base-content/50 shrink-0"
-              datetime={DateTime.to_iso8601(note.updated_at)}
-            >
-              {short_date(note.updated_at)}
-            </time>
-          </button>
-        </li>
-      </ul>
+            <td class="min-w-0">
+              <button
+                type="button"
+                phx-click="open_note"
+                phx-value-uuid={note.uuid}
+                phx-target={@myself}
+                class="flex w-full min-w-0 items-center gap-2 text-left"
+              >
+                <.icon name="hero-document-text" class="w-4 h-4 shrink-0 text-base-content/60" />
+                <span class="truncate">{note.title}</span>
+              </button>
+              <div class="@sm:hidden pl-6 text-xs text-base-content/50 truncate">
+                {gettext("Modified %{date}", date: short_date(note.updated_at))}<span :if={
+                  note.updated_by
+                }> · {person(@people, note.updated_by)}</span>
+              </div>
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              {render_stamp(%{at: note.inserted_at, by: note.created_by, people: @people})}
+            </td>
+            <td class="hidden @sm:table-cell whitespace-nowrap">
+              {render_stamp(%{at: note.updated_at, by: note.updated_by, people: @people})}
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
       <p :if={@folders == [] and @notes == []} class="text-sm text-base-content/50 italic">
         {if @can_edit?, do: gettext("No notes here yet."), else: gettext("No notes here.")}
@@ -1026,26 +1548,6 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
           {gettext("Cancel")}
         </button>
       </form>
-
-      <div :if={@can_edit? and is_nil(@creating)} class="flex gap-2">
-        <button
-          type="button"
-          phx-click="new_note"
-          phx-target={@myself}
-          class="btn btn-sm btn-primary"
-        >
-          <.icon name="hero-document-plus" class="w-4 h-4" /> {gettext("Note")}
-        </button>
-        <button
-          type="button"
-          phx-click="start"
-          phx-value-what="folder"
-          phx-target={@myself}
-          class="btn btn-sm btn-ghost"
-        >
-          <.icon name="hero-folder-plus" class="w-4 h-4" /> {gettext("Folder")}
-        </button>
-      </div>
     </div>
     """
   end
@@ -1053,80 +1555,86 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp render_note(assigns) do
     ~H"""
     <article class="space-y-2">
-      <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          phx-click="close_note"
-          phx-target={@myself}
-          class="btn btn-ghost btn-xs"
-          title={gettext("Back to the list")}
-          aria-label={gettext("Back to the list")}
-        >
-          <.icon name="hero-arrow-left" class="w-4 h-4" />
-        </button>
-
-        <form
-          :if={@renaming?}
-          id={"#{@id}-rename"}
-          phx-submit="rename_note"
-          phx-target={@myself}
-          class="flex flex-1 min-w-0 gap-2"
-        >
-          <input
-            type="text"
-            name="title"
-            value={@note.title}
-            aria-label={gettext("Note title")}
-            class="input input-sm flex-1 min-w-0"
-            autofocus
-            required
-          />
-          <button type="submit" class="btn btn-sm btn-primary">{gettext("Rename")}</button>
-          <button type="button" phx-click="cancel" phx-target={@myself} class="btn btn-sm btn-ghost">
-            {gettext("Cancel")}
-          </button>
-        </form>
-
-        <button
-          :if={not @renaming? and @can_edit?}
-          type="button"
-          phx-click="start_rename"
-          phx-target={@myself}
-          class="font-medium truncate flex-1 min-w-0 text-left hover:underline decoration-dotted"
-          title={gettext("Rename")}
-        >
-          {@note.title}
-        </button>
-        <h3 :if={not @renaming? and not @can_edit?} class="font-medium truncate flex-1 min-w-0">
-          {@note.title}
-        </h3>
-
-        <span :if={not @renaming?} class={["badge badge-sm", save_class(@save_status)]}>
-          {save_label(@save_status)}
-        </span>
-
-        <div :if={@can_edit? and not @renaming?} class="flex gap-1">
+      <%!-- The same tinted header as the list (core's media header). --%>
+      <div class="relative rounded-xl">
+        <div class="absolute inset-0 rounded-xl bg-gradient-to-br from-base-200 to-base-300"></div>
+        <div class="absolute inset-0 rounded-xl bg-gradient-to-t from-base-100 via-base-100/60 to-transparent">
+        </div>
+        <div class="relative z-10 p-2 sm:p-3 flex flex-wrap items-center gap-2">
           <button
+            type="button"
+            phx-click="close_note"
+            phx-target={@myself}
+            class="btn btn-ghost btn-xs"
+            title={gettext("Back to the list")}
+            aria-label={gettext("Back to the list")}
+          >
+            <.icon name="hero-arrow-left" class="w-4 h-4" />
+          </button>
+
+          <%!-- The title is the rename field: it looks like one on hover
+             (border, pencil), and a click turns it into one in place. Enter
+             or leaving the field saves, Escape puts it back. --%>
+          <form
+            :if={@renaming?}
+            id={"#{@id}-rename"}
+            phx-submit="rename_note"
+            phx-target={@myself}
+            class="flex-1 min-w-0"
+          >
+            <input
+              id={"#{@id}-rename-input"}
+              type="text"
+              name="title"
+              value={@note.title}
+              aria-label={gettext("Note title")}
+              class="input input-sm w-full font-medium"
+              phx-mounted={JS.focus()}
+              phx-blur="rename_note"
+              phx-keydown="cancel"
+              phx-key="Escape"
+              phx-target={@myself}
+              autofocus
+              required
+            />
+          </form>
+
+          <button
+            :if={not @renaming? and @can_edit?}
             type="button"
             phx-click="start_rename"
             phx-target={@myself}
-            class="btn btn-ghost btn-xs"
-            title={gettext("Rename")}
-            aria-label={gettext("Rename")}
+            class="group flex flex-1 min-w-0 items-center gap-1.5 rounded-field border border-transparent px-2 h-8 text-left font-medium cursor-text hover:border-base-300 hover:bg-base-200/50 focus-visible:border-base-300"
+            title={gettext("Click to rename")}
+            aria-label={gettext("Rename “%{title}”", title: @note.title)}
           >
-            <.icon name="hero-pencil" class="w-4 h-4" />
+            <span class="truncate">{@note.title}</span>
+            <.icon
+              name="hero-pencil"
+              class="w-3.5 h-3.5 shrink-0 opacity-40 group-hover:opacity-80"
+            />
           </button>
-          <button
-            type="button"
-            phx-click="trash_note"
-            phx-target={@myself}
-            data-confirm={gettext("Move this note to the vault's trash?")}
-            class="btn btn-ghost btn-xs text-error"
-            title={gettext("Move to trash")}
-            aria-label={gettext("Move to trash")}
-          >
-            <.icon name="hero-trash" class="w-4 h-4" />
-          </button>
+          <h3 :if={not @renaming? and not @can_edit?} class="font-medium truncate flex-1 min-w-0 px-2">
+            {@note.title}
+          </h3>
+
+          <span :if={not @renaming?} class={["badge badge-sm", save_class(@save_status)]}>
+            {save_label(@save_status)}
+          </span>
+
+          <div :if={@can_edit? and not @renaming?} class="flex gap-1">
+            <button
+              type="button"
+              phx-click="trash_note"
+              phx-target={@myself}
+              data-confirm={gettext("Move this note to the vault's trash?")}
+              class="btn btn-ghost btn-xs text-error"
+              title={gettext("Move to trash")}
+              aria-label={gettext("Move to trash")}
+            >
+              <.icon name="hero-trash" class="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1206,6 +1714,45 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     """
   end
 
+  # The explorer's current folder is a folder struct, or nil for the top (the
+  # panel's own folder, which is not in the tree).
+  defp tree_current(tree_folders, path) do
+    Enum.find_value(tree_folders, fn {_uuid, folder} ->
+      if folder.relative_path == path, do: folder
+    end)
+  end
+
+  # When, and by whom underneath — a dash when nobody is on record.
+  defp render_stamp(assigns) do
+    ~H"""
+    <time
+      class="block text-xs"
+      datetime={DateTime.to_iso8601(@at)}
+      title={PhoenixKit.Utils.Date.format_short_datetime(@at)}
+    >
+      {short_date(@at)}
+    </time>
+    <span :if={@by} class="block text-xs text-base-content/50 truncate max-w-[12rem]">
+      {person(@people, @by)}
+    </span>
+    <%!-- Nobody on record (a folder, a file written outside the app): a
+         dash, so the row keeps the height of the others. --%>
+    <span :if={is_nil(@by)} class="block text-xs text-base-content/30" aria-hidden="true">—</span>
+    """
+  end
+
+  defp person(people, uuid), do: Map.get(people, uuid) || gettext("Unknown user")
+
+  # The list's title: the folder's name below the panel's own folder; at the top
+  # the panel's label (unless the host turned the label off).
+  defp listing_title(%{place: place, current_folder: current} = assigns) do
+    if current == place.folder do
+      if assigns.show_label?, do: assigns.label || List.last(place.path)
+    else
+      Path.basename(current)
+    end
+  end
+
   # The trail from the panel's own folder down to the current one — never above
   # it. The first crumb is the panel's root, labelled as the panel is.
   defp crumbs(place, current) do
@@ -1233,7 +1780,11 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   # "5 Nov" / "5. nov" — core's, so the order and punctuation come from each
   # language's own translation rather than a format string written in English.
-  defp short_date(datetime), do: PhoenixKit.Utils.Date.short(datetime)
+  defp short_date(datetime) do
+    if datetime.year == Date.utc_today().year,
+      do: PhoenixKit.Utils.Date.short(datetime),
+      else: PhoenixKit.Utils.Date.short_with_year(datetime)
+  end
 
   # The vault page's configs, headings already in the reader's language.
   defp suggestion_configs, do: VaultLive.suggestion_configs()
