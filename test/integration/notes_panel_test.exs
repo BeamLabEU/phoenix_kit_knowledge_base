@@ -458,6 +458,22 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert html =~ "Ada Lovelace"
       assert html =~ "Grace Hopper"
     end
+
+    # Everyone who may read the panel reads its bylines: a person with no name
+    # is shown as core shows them, by the email's local part, never the address.
+    test "a writer with no name is not shown by their whole email address", %{
+      conn: conn,
+      me: me,
+      other: other
+    } do
+      {vault, note} = note!(me, "Minutes")
+      {:ok, _} = Notes.update_content(vault, note, "changed", actor_uuid: other.uuid)
+
+      {:ok, _lv, html} = mount_panel(conn, me)
+      [local, _domain] = String.split(other.email, "@")
+      assert html =~ local
+      refute html =~ other.email
+    end
   end
 
   describe "writing" do
@@ -969,6 +985,58 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       fire(lv, "rename_folder", %{"folder_uuid" => calls.uuid, "name" => "Meetings"})
       assert folder!(vault, "Clients/Acme/Meetings")
       refute folder!(vault, "Clients/Acme/Calls")
+    end
+
+    test "the tree's \"+\" beside an open note brings up the folder name field", %{
+      conn: conn,
+      me: me,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      html = fire(lv, "open_new_folder_modal")
+      assert html =~ ~s(id="panel-create")
+    end
+
+    # With `poll: 0` the tree is the mount's picture until the panel itself
+    # changes something; every folder an event names is read again.
+    test "a folder moved away since the tree was drawn is neither moved nor renamed", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      {:ok, _} = Notes.relocate_folder(vault, calls, "Clients/Globex/Calls")
+      # Another folder takes the old path.
+      {:ok, newcomer} = Notes.create_folder(vault, "Clients/Acme", "Calls")
+      refute newcomer.uuid == calls.uuid
+
+      fire(lv, "rename_folder", %{"folder_uuid" => calls.uuid, "name" => "Meetings"})
+      refute folder!(vault, "Clients/Acme/Meetings")
+      assert folder!(vault, "Clients/Acme/Calls").uuid == newcomer.uuid
+      assert folder!(vault, "Clients/Globex/Calls")
+
+      # Nor is the old picture a drop target: the note stays where it is.
+      fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme"
+    end
+
+    test "the panel's own folder is not renamed or moved from it", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      calls: calls
+    } do
+      own = folder!(vault, "Clients/Acme")
+      {:ok, lv, _} = mount_panel(conn, me)
+
+      fire(lv, "rename_folder", %{"folder_uuid" => own.uuid, "name" => "Renamed"})
+      fire(lv, "move_folder_to_folder", %{"folder_uuid" => own.uuid, "target_uuid" => calls.uuid})
+
+      assert folder!(vault, "Clients/Acme").uuid == own.uuid
+      refute folder!(vault, "Clients/Renamed")
     end
 
     test "someone who may only read gets no drag and no moves", %{

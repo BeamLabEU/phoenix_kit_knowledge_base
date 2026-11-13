@@ -53,9 +53,9 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   alias Phoenix.LiveView.JS
   alias PhoenixKit.Users.Auth
-  alias PhoenixKit.Users.Auth.Scope
+  alias PhoenixKit.Users.Auth.{Scope, User}
   alias PhoenixKitKnowledgeBase.{Errors, Links, Markdown, Notes, Paths, Places, Storage, Vaults}
-  alias PhoenixKitKnowledgeBase.Schemas.Note
+  alias PhoenixKitKnowledgeBase.Schemas.{Folder, Note}
   alias PhoenixKitKnowledgeBase.Web.VaultLive
 
   @default_poll 5_000
@@ -330,11 +330,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     )
   end
 
-  # Who wrote and who last changed each note, by name. Names are kept across
-  # polls and only the people not yet known are read, so a listing that does
-  # not change costs no query here. A uuid with no user behind it (deleted, or
-  # written from outside the app) is remembered as unknown rather than asked
-  # about again on every poll.
+  # Who wrote and who last changed each note, by name: core's byline,
+  # `User.display_name/1` (a name, else the username, else the email's local
+  # part). Everyone who can read the panel sees it, so never a whole address,
+  # which `Vaults.user_label/1` falls back to on the members page. Names are
+  # kept across polls and only the people not yet known are read, so a listing
+  # that does not change costs no query here. A uuid with no user behind it
+  # (deleted, or written from outside the app) is remembered as unknown rather
+  # than asked about again on every poll.
   defp assign_people(socket, notes) do
     known = socket.assigns.people
 
@@ -347,7 +350,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     if missing == [] do
       socket
     else
-      found = Map.new(Auth.get_users_by_uuids(missing), &{&1.uuid, Vaults.user_label(&1)})
+      found = Map.new(Auth.get_users_by_uuids(missing), &{&1.uuid, User.display_name(&1)})
       fetched = Map.new(missing, &{&1, Map.get(found, &1)})
       assign(socket, :people, Map.merge(known, fetched))
     end
@@ -505,9 +508,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   def handle_event("toggle_sidebar", _params, socket),
     do: {:noreply, update(socket, :sidebar_collapsed, &(not &1))}
 
-  # The explorer's "+": a folder in the folder being looked at.
+  # The explorer's "+": a folder in the folder being looked at. The tree stays
+  # beside an open note, but the name field is the listing's, so the note is
+  # left for it (autosave has written what was typed), as opening a folder does.
   def handle_event("open_new_folder_modal", _params, socket) do
-    handle_event("start", %{"what" => "folder"}, socket)
+    with_access(socket, :edit, fn socket ->
+      socket
+      |> close_note()
+      |> assign(:creating, :folder)
+      |> assign(:draft_title, "")
+      |> assign(:notice, nil)
+    end)
   end
 
   def handle_event("start_rename_folder", %{"folder-uuid" => uuid} = params, socket) do
@@ -535,20 +546,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   def handle_event("rename_folder", %{"folder_uuid" => uuid, "name" => name}, socket)
       when is_binary(name) do
     with_access(socket, :edit, fn socket ->
-      with %{} = folder <- Map.get(socket.assigns.tree_folders, uuid),
-           {:ok, clean} <- Storage.validate_filename(name),
-           target = Path.join(parent_path(folder.relative_path), clean),
-           {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
-        socket |> cancel_folder_rename() |> after_folder_move(folder.relative_path, target)
+      socket = cancel_folder_rename(socket)
+
+      with %Folder{} = folder <- fenced_folder(socket, uuid),
+           {:ok, clean} <- Storage.validate_filename(name) do
+        relocate(socket, folder, Path.join(parent_path(folder.relative_path), clean))
       else
-        {:error, :unchanged} ->
-          cancel_folder_rename(socket)
-
-        nil ->
-          cancel_folder_rename(socket)
-
-        {:error, reason} ->
-          socket |> cancel_folder_rename() |> notice(:error, error_message(reason))
+        nil -> socket
+        {:error, reason} -> notice(socket, :error, error_message(reason))
       end
     end)
   end
@@ -579,18 +584,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   def handle_event("move_folder_to_folder", %{"folder_uuid" => uuid} = params, socket) do
     with_access(socket, :edit, fn socket ->
-      with %{} = folder <- Map.get(socket.assigns.tree_folders, uuid),
+      with %Folder{} = folder <- fenced_folder(socket, uuid),
            {:ok, parent} <- drop_target(socket, params["target_uuid"]),
            # Into itself or below itself: nowhere to put it.
            false <-
              parent == folder.relative_path or
-               String.starts_with?(parent, folder.relative_path <> "/"),
-           target = Path.join(parent, folder.name),
-           {:ok, _moved} <- Notes.relocate_folder(socket.assigns.vault, folder, target) do
-        after_folder_move(socket, folder.relative_path, target)
+               String.starts_with?(parent, folder.relative_path <> "/") do
+        relocate(socket, folder, Path.join(parent, folder.name))
       else
-        {:error, :unchanged} -> socket
-        {:error, reason} -> notice(socket, :error, error_message(reason))
         _ -> socket
       end
     end)
@@ -780,9 +781,48 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     do: {:ok, socket.assigns.place.folder}
 
   defp drop_target(socket, uuid) do
-    case Map.get(socket.assigns.tree_folders, uuid) do
+    case fenced_folder(socket, uuid) do
       nil -> :error
       folder -> {:ok, folder.relative_path}
+    end
+  end
+
+  # A folder an event names, read again rather than taken from `@tree_folders`:
+  # that is the last poll's picture (and with `poll: 0` the mount's), and the
+  # folder may have moved since — out of the fence, or another folder into its
+  # old path. Only a folder strictly below the panel's own: moving or renaming
+  # that one would move the fence itself.
+  defp fenced_folder(%{assigns: %{vault: nil}}, _uuid), do: nil
+
+  defp fenced_folder(%{assigns: %{vault: vault, place: place}}, uuid) when is_binary(uuid) do
+    with %Folder{relative_path: path} = folder <- Notes.get_folder(vault.uuid, uuid),
+         true <- path != place.folder and Places.within?(place, path) do
+      folder
+    else
+      _ -> nil
+    end
+  end
+
+  defp fenced_folder(_socket, _uuid), do: nil
+
+  # A folder rename or move. A partial re-index still moved the bytes, so the
+  # listing and an open note follow them as on success, and the notice says
+  # what a rescan repairs.
+  defp relocate(socket, folder, target) do
+    case Notes.relocate_folder(socket.assigns.vault, folder, target) do
+      {:ok, _moved} ->
+        after_folder_move(socket, folder.relative_path, target)
+
+      {:error, :unchanged} ->
+        socket
+
+      {:error, {:reindex_incomplete, _paths} = reason} ->
+        socket
+        |> after_folder_move(folder.relative_path, target)
+        |> notice(:error, error_message(reason))
+
+      {:error, reason} ->
+        notice(socket, :error, error_message(reason))
     end
   end
 
