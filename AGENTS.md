@@ -223,6 +223,19 @@ that app; what matters here:
   save come back `:stale`. The location is a different field and *is* taken —
   leaving the old path in place is how Keep mine used to write it back into
   existence. Pinned by `vault_live_test.exs` and `notes_panel_test.exs`.
+- **A same-note patch leaves Leaf's buffer mounted.** Clicking the open note
+  again must keep its original hash, just like a peer-change notification.
+  Own drag operations (even an unrelated folder move) must use the same
+  location-only adoption rule. Explicit Reload replaces both content and hash.
+- **A panel's id can outlive its path and user.** A host can reuse the same
+  LiveComponent for another record or signed-in user. Reset its open editor,
+  folder, drafts and cached vault link when that context changes, and keep the
+  selected visibility inside the host's current `visibility_options`. Ordinary
+  host re-renders retain the buffer's hash.
+- **An open vault page can outlive its membership.** `VaultLive` attaches access
+  checks to both `:handle_event` and `:handle_info`: Leaf autosaves arrive as
+  messages, and PubSub refreshes read private data too. Updating only the
+  browser-event guards would leave both paths open after access is revoked.
 
 **HEEx**
 

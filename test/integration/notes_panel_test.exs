@@ -53,6 +53,12 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
     render(lv)
   end
 
+  defp reconfigure(lv, user, opts) do
+    assigns = Keyword.merge([id: "panel", current_user: user, path: @path, poll: 0], opts)
+    Phoenix.LiveView.send_update(lv.pid, NotesPanel, assigns)
+    render(lv)
+  end
+
   defp place!(path, visibility) do
     {:ok, place} = Places.parse(path, visibility)
     place
@@ -133,6 +139,68 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       # The tree still names its top after the panel; the title goes.
       {:ok, _lv, html} = mount_panel(conn, me, show_label: false, label: "Client notes")
       refute html =~ ~r{<h2[^>]*>\s*Client notes}
+    end
+  end
+
+  describe "host updates" do
+    test "a new path releases the previous folder's editor", %{conn: conn, me: me} do
+      {_vault, note} = note!(me, "Acme secret", @path, :shared, "Acme body")
+      note!(me, "Globex note", ["CRM", "Clients", "Globex"])
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      html = reconfigure(lv, me, path: ["CRM", "Clients", "Globex"])
+
+      refute html =~ NotesPanel.editor_id("panel", note)
+      refute html =~ "Acme secret"
+      assert html =~ "Globex note"
+    end
+
+    test "switching users releases the previous user's private editor", %{
+      conn: conn,
+      me: me,
+      other: other
+    } do
+      {_vault, note} = note!(me, "My secret", @path, :private, "private body")
+      note!(other, "Their note", @path, :private)
+      {:ok, lv, _} = mount_panel(conn, me, visibility_options: [:private])
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      html = reconfigure(lv, other, visibility_options: [:private])
+
+      refute html =~ NotesPanel.editor_id("panel", note)
+      refute html =~ "My secret"
+      assert html =~ "Their note"
+    end
+
+    test "removing the selected visibility switches to an allowed one", %{conn: conn, me: me} do
+      {_vault, note} = note!(me, "Private note", @path, :private)
+      note!(me, "Shared note")
+      {:ok, lv, _} = mount_panel(conn, me, default_visibility: :private)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+
+      html = reconfigure(lv, me, visibility_options: [:shared])
+
+      refute html =~ NotesPanel.editor_id("panel", note)
+      refute html =~ "Private note"
+      assert html =~ "Shared note"
+    end
+
+    test "an unchanged context keeps the editor and its stale guard", %{conn: conn, me: me} do
+      {vault, note} = note!(me, "Plan", @path, :shared, "original")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      {:ok, _} = Notes.update_content(vault, note, "theirs")
+
+      assert reconfigure(lv, me, label: "New label") =~ NotesPanel.editor_id("panel", note)
+
+      leaf(
+        lv,
+        {:leaf_changed,
+         %{editor_id: NotesPanel.editor_id("panel", note), markdown: "mine", dirty: true}}
+      )
+
+      assert file(vault, note) == "theirs"
     end
   end
 

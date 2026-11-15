@@ -127,6 +127,91 @@ defmodule PhoenixKitKnowledgeBase.Integration.VaultLiveTest do
   end
 
   describe "someone else saving the note on screen" do
+    test "explicit reload takes the peer's content and lets editing resume", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      render(lv)
+
+      render_click(lv, "reload_note")
+      type(lv, note, "their version, and mine")
+
+      assert file(vault, note.relative_path) == "their version, and mine"
+    end
+
+    test "patching to the open note keeps the buffer's stale guard", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      assert render(lv) =~ "Someone else just saved this note"
+
+      render_patch(lv, Paths.note(vault.slug, note.uuid))
+      html = type(lv, note, "first draft, and mine")
+
+      assert file(vault, note.relative_path) == "their version"
+      assert html =~ "This note changed since you opened it"
+    end
+
+    test "dragging the open note keeps the buffer's stale guard", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      render(lv)
+
+      render_hook(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => ""})
+      html = type(lv, note, "first draft, and mine")
+
+      assert file(vault, "Ideas.md") == "their version"
+      assert html =~ "This note changed since you opened it"
+    end
+
+    test "dragging a folder keeps the open buffer's stale guard", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, destination} = Notes.create_folder(vault, "", "archive")
+      folder = Notes.get_folder_by_path(vault.uuid, "papers")
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      render(lv)
+
+      render_hook(lv, "move_folder_to_folder", %{
+        "folder_uuid" => folder.uuid,
+        "target_uuid" => destination.uuid
+      })
+
+      html = type(lv, note, "first draft, and mine")
+
+      assert file(vault, "archive/papers/Ideas.md") == "their version"
+      assert html =~ "This note changed since you opened it"
+    end
+
+    test "selecting the note's current folder keeps the buffer's stale guard", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      render(lv)
+
+      lv |> element("#kb-move-form") |> render_change(%{"folder" => "papers"})
+      html = type(lv, note, "first draft, and mine")
+
+      assert file(vault, note.relative_path) == "their version"
+      assert html =~ "This note changed since you opened it"
+    end
+
     test "raises the banner and keeps the guard: the next keystroke does not overwrite them", %{
       conn: conn,
       vault: vault,
@@ -233,6 +318,60 @@ defmodule PhoenixKitKnowledgeBase.Integration.VaultLiveTest do
       assert file(vault, "papers/Ideas.md") == "occupant"
       assert Notes.get_note(vault.uuid, occupant.uuid).content == "occupant"
       refute File.exists?(Path.join(Storage.vault_path(vault.directory), "Ideas.md"))
+    end
+  end
+
+  describe "access changes while the page is open" do
+    setup %{vault: vault} do
+      editor = user_fixture()
+      {:ok, member} = Vaults.put_member(vault, editor.uuid, "editor")
+      conn = Plug.Test.init_test_session(build_conn(), %{"user_uuid" => editor.uuid})
+      %{editor: editor, member: member, conn: conn}
+    end
+
+    test "a demoted editor's autosave and delete are refused", %{
+      conn: conn,
+      editor: editor,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Vaults.put_member(vault, editor.uuid, "viewer")
+
+      type(lv, note, "no longer permitted")
+      assert file(vault, note.relative_path) == "first draft"
+
+      render_click(lv, "delete_note")
+      assert Notes.get_note(vault.uuid, note.uuid)
+      assert file(vault, note.relative_path) == "first draft"
+    end
+
+    test "a removed member cannot search for new content", %{
+      conn: conn,
+      member: member,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Vaults.remove_member(member)
+
+      assert {:error, {:live_redirect, %{to: to}}} =
+               render_click(lv, "search", %{"query" => "draft"})
+
+      assert to == Paths.vaults()
+    end
+
+    test "a removed member's PubSub refresh cannot deliver new content", %{
+      conn: conn,
+      member: member,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Vaults.remove_member(member)
+      {:ok, _} = Notes.update_content(vault, note, "new private content")
+
+      assert_redirect(lv, Paths.vaults())
     end
   end
 

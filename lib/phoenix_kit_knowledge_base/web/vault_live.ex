@@ -156,7 +156,37 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
      |> assign(:unresolved, [])
      |> assign(:note_count, 0)
      |> assign(:backlinks, [])
-     |> assign(:outgoing, [])}
+     |> assign(:outgoing, [])
+     |> attach_hook(:kb_vault_access, :handle_event, fn _event, _params, socket ->
+       check_access(socket)
+     end)
+     |> attach_hook(:kb_vault_access, :handle_info, fn _message, socket ->
+       check_access(socket)
+     end)}
+  end
+
+  # A page can outlive its membership. Check both browser events and messages:
+  # Leaf saves arrive as messages, and a PubSub refresh also reads private data.
+  # Refresh the role before any handler uses the permissions shown at render.
+  defp check_access(socket) do
+    with %{slug: slug} <- socket.assigns.vault,
+         {:ok, vault, role} <- Vaults.fetch_for(slug, socket.assigns.phoenix_kit_current_scope) do
+      {:cont,
+       socket
+       |> assign(:vault, vault)
+       |> assign(:role, role)
+       |> assign(:can_write, Vaults.can?(role, :write))
+       |> assign(:can_manage, Vaults.can?(role, :manage))}
+    else
+      _ ->
+        {:halt,
+         socket
+         |> put_flash(
+           :error,
+           gettext("That vault does not exist, or you do not have access to it.")
+         )
+         |> push_navigate(to: Paths.vaults())}
+    end
   end
 
   @impl true
@@ -262,7 +292,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     end
   end
 
-  defp open_note(socket, %Note{} = note) do
+  # A patch to this same note leaves Leaf mounted with its current buffer.
+  # Keep that buffer's hash, just as when a peer's save arrives over PubSub.
+  defp open_note(%{assigns: %{note: %Note{uuid: uuid}}} = socket, %Note{uuid: uuid}) do
+    socket |> follow_open_note() |> assign_note_links()
+  end
+
+  defp open_note(socket, %Note{} = note), do: load_note(socket, note)
+
+  defp load_note(socket, note) do
     socket
     |> assign(:note, note)
     |> assign(:content, note.content || "")
@@ -379,11 +417,11 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
          %Note{} = note <- socket.assigns.note,
          %Note{} = fresh <- Notes.get_note(socket.assigns.vault.uuid, note.uuid),
          located = Notes.located_for_save(note, fresh),
-         {:ok, updated} <-
+         {:ok, _updated} <-
            Notes.move_note(socket.assigns.vault, located, folder_path,
              actor_uuid: actor_uuid(socket)
            ) do
-      {:noreply, socket |> assign(:note, updated) |> assign(:conflict, false) |> load_workspace()}
+      {:noreply, socket |> follow_open_note() |> load_workspace() |> assign_note_links()}
     else
       {:error, reason} -> {:noreply, put_flash(socket, :error, error_message(reason))}
       _ -> {:noreply, put_flash(socket, :error, gettext("Could not move that note."))}
@@ -1085,14 +1123,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   # note's file is gone from disk" until the reader navigates away. The
   # `kb_note_saved` broadcast cannot rescue it either — it comes from this same
   # pid, so `Events.own?/1` drops it.
-  defp refresh_open_note(%{assigns: %{note: nil}} = socket), do: socket
-
-  defp refresh_open_note(socket) do
-    case Notes.get_note(socket.assigns.vault.uuid, socket.assigns.note.uuid) do
-      nil -> socket
-      note -> assign(socket, :note, note)
-    end
-  end
+  defp refresh_open_note(socket), do: follow_open_note(socket)
 
   defp move_error(reason), do: error_message(reason)
 
@@ -1365,7 +1396,9 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         |> push_patch(to: Paths.vault(socket.assigns.vault.slug))
 
       note ->
-        socket |> open_note(note) |> push_editor_content(note)
+        # This action explicitly replaces the buffer, unlike a same-note
+        # navigation or a move, so take the new hash along with its content.
+        socket |> load_note(note) |> push_editor_content(note)
     end
   end
 

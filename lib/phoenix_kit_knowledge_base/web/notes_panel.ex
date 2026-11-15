@@ -143,12 +143,15 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   end
 
   def update(assigns, socket) do
+    previous_context = panel_context(socket.assigns)
+
     socket =
       socket
       |> assign_config(assigns)
       |> init_once()
       |> place_for_visibility()
-      |> load()
+      |> reconcile_context(previous_context)
+      |> refresh()
       |> arm_timer()
 
     {:ok, socket}
@@ -179,7 +182,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp visibility_options(_), do: @visibilities
 
-  defp init_once(%{assigns: %{initialized?: true}} = socket), do: socket
+  defp init_once(%{assigns: %{initialized?: true}} = socket) do
+    %{visibility: visibility, visibility_options: options, default_visibility: default} =
+      socket.assigns
+
+    if visibility in options,
+      do: socket,
+      else: assign(socket, :visibility, if(default in options, do: default, else: hd(options)))
+  end
 
   defp init_once(socket) do
     options = socket.assigns.visibility_options
@@ -239,6 +249,34 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
       {:error, reason} ->
         socket |> assign(:place, nil) |> assign(:config_error, reason)
+    end
+  end
+
+  # LiveComponents survive changes to their host's assigns under the same id.
+  # A new path, user or visibility must release the old editor and cached link;
+  # a cosmetic host update must keep the buffer and its original hash.
+  defp panel_context(%{user: user, place: place}), do: {user && user.uuid, place}
+  defp panel_context(_assigns), do: nil
+
+  defp reconcile_context(socket, previous) do
+    if panel_context(socket.assigns) == previous do
+      socket
+    else
+      socket
+      |> close_note()
+      |> cancel_folder_rename()
+      |> assign(:current_folder, socket.assigns.place && socket.assigns.place.folder)
+      |> assign(:creating, nil)
+      |> assign(:draft_title, "")
+      |> assign(:notice, nil)
+      |> assign(:vault, nil)
+      |> assign(:can_view?, false)
+      |> assign(:can_edit?, false)
+      |> assign(:people, %{})
+      |> assign(:admin_href, nil)
+      |> assign(:admin_href_for, nil)
+      |> assign(:expanded_folders, MapSet.new())
+      |> load_listing()
     end
   end
 
