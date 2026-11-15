@@ -5,6 +5,89 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-15
+
+The notes panel grows a folder tree with drag and drop, and edits with Leaf
+wherever Leaf can talk to it. Several ways of overwriting a colleague's save
+are closed, and an open vault page now follows membership changes.
+
+### Added
+
+- **A folder tree in the notes panel**, using core's `FolderExplorer`, rooted
+  at the panel's folder. Its folders and notes can be expanded, opened, created
+  and renamed. It starts collapsed and appears once the panel is wide enough;
+  a narrow panel keeps the breadcrumbs.
+- **Drag and drop in the panel**, using core's `MediaDragDrop` hook: drop a
+  note or folder onto a folder, or onto the top of the tree, to move it. Every
+  move is checked against the panel's folder (its fence). A folder never goes
+  into itself, and someone who may only read gets no drag. Since core 3.6 the
+  hook lives in core's admin bundle, so a host that upgraded core must have
+  run `mix phoenix_kit.update`.
+- **A list like core's media page.** Name, Created and Modified, each with who
+  did it. A person with no name is shown by their email's local part, never
+  the whole address. A folder's row shows how many notes it holds and its
+  latest change. A folder has a back arrow up one level, except at the panel's
+  own folder.
+- **Rename from the title.** Click a note's title to edit it in place; Enter
+  or leaving the field saves it, and Escape puts it back.
+- **`vault_link`** (default `false`): a button that opens the whole vault on
+  the admin pages. It is shown only to someone the admin pages would let in.
+- **`Notes.folder_tree/2`** takes `under:` for one folder's subtree.
+
+### Changed
+
+- **The panel edits with Leaf when Leaf is 0.11 or later**, which Leaf 0.12 in
+  the lock now is, with formatting and `[[`/`#` autocomplete. An older Leaf
+  still gets the plain markdown textarea.
+- **`phoenix_kit` floor is 3.5.0** (`>= 3.5.0 and < 4.0.0`), the ecosystem
+  minimum.
+- **Leaf floor is 0.6.1** (`>= 0.6.1 and < 1.0.0`). `~> 0.5` admitted versions
+  without `Leaf.Collab` or click-to-follow links.
+- Dependencies updated: phoenix_kit 3.6.0, leaf 0.12.0, mdex 0.14.7, and
+  others. `ex_aws_ec2` left the lock along with core.
+
+### Fixed
+
+- **A colleague's save is no longer overwritten without a prompt.** Before, if
+  someone else had saved the open note, your next keystroke could replace their
+  text after any of these actions:
+  - moving or renaming it, or moving any folder;
+  - dragging it, or re-selecting its current folder;
+  - clicking it again in the tree, or following a link to it;
+  - in the panel, a host re-render.
+
+  The editor now keeps the version it loaded, takes only the note's new
+  location, and shows "Someone else changed this note". The next save is
+  refused, and you choose.
+- **A save writes where the note is now.** A save after someone else moved the
+  note, "Keep mine" included, used to write its old path. That recreated the
+  file, or overwrote the note that had taken that path. Trash and rename act
+  on the note as it is now too. A note moved out of the panel's folder is let
+  go of, and trashing it from the vault page leaves alone whatever now sits at
+  the old path.
+- **A moved folder keeps its id**, so the tree still opens it, drag targets
+  still find it, and expanded folders stay expanded.
+- **Creating in a folder moved away since it was shown** no longer brings that
+  folder back. The panel returns to its top and says so. A subfolder is not
+  rebuilt once its vault is gone.
+- **A reused panel lets go of its previous context.** A host that reuses the
+  component for another record or another signed-in user no longer leaves the
+  previous note open, which could show private notes to the next person. A
+  `visibility_options` change that removes the selected option switches to an
+  allowed one.
+- **An open vault page follows membership changes.** A demoted editor can no
+  longer save or delete, and a removed member can no longer search or receive
+  updates. Both browser events and messages (autosaves, PubSub) are checked
+  again.
+- **Leaf is detected reliably in dev.** The panel checked for Leaf without
+  loading it, so in a dev server it showed the textarea until another page had
+  rendered Leaf, then swapped editors mid-session.
+- "Back" in the panel no longer shows a fresh listing after access is
+  withdrawn. A re-mounted panel can no longer gain a second poll timer.
+- The vault page drops core 3.6's new drag-hook events (`box_select`,
+  `move_picked_to_folder`, `pick_quick_confirm`) instead of crashing on them.
+- The "deleted by someone else" message is translated.
+
 ## [0.1.0] - 2026-11-10
 
 First release. Notes are markdown files on disk; Postgres indexes them.
@@ -264,4 +347,5 @@ foundations, follows under its date.
   filename sanitisation, link-resolution tie-breaking, changeset invariants,
   behaviour compliance, route ordering and migration version bookkeeping.
 
+[0.2.0]: https://github.com/BeamLabEU/phoenix_kit_knowledge_base/releases/tag/v0.2.0
 [0.1.0]: https://github.com/BeamLabEU/phoenix_kit_knowledge_base/releases/tag/v0.1.0

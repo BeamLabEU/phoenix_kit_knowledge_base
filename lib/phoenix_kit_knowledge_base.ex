@@ -98,7 +98,7 @@ defmodule PhoenixKitKnowledgeBase do
   ## Installation
 
       # host mix.exs
-      {:phoenix_kit_knowledge_base, "~> 0.1"}
+      {:phoenix_kit_knowledge_base, "~> 0.2"}
 
       # host config
       config :phoenix_kit_knowledge_base,
