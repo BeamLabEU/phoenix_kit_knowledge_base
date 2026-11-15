@@ -228,15 +228,21 @@ one `CRM` vault with a folder per client.
   exist, come from the panel's own folder — titles from elsewhere in the vault
   are never shown. A followed link opens the note in the panel, or offers to
   create it there.
-- **Admins** (the `knowledge_base` permission and a role on the vault) also get
-  a link to the whole vault on the admin pages.
-- **The editor.** With Leaf 0.11 (its `notify` option) the panel edits with
-  Leaf: formatting, `[[`/`#` autocomplete. With an older Leaf — which Leaf you
-  get is capped by `phoenix_kit`'s own requirement, and 3.4.0 stops at 0.10 —
-  it edits with a plain markdown textarea instead: the same autosave, the same
-  guard against overwriting a change made elsewhere (and the same "Take
-  theirs / Keep mine" choice), read-only without edit access. It never sends
-  the editor's messages to your page either way.
+- **A link to the whole vault**, with `vault_link={true}` (off by default): a
+  button that opens the vault on the admin pages, shown only to someone who may
+  open it there (the `knowledge_base` permission and a role on the vault).
+- **The editor.** With Leaf 0.11 or later (its `notify` option) the panel
+  edits with Leaf: formatting, `[[`/`#` autocomplete. With an older Leaf —
+  which Leaf you get is capped by `phoenix_kit`'s own requirement, and 3.5.0
+  still admits Leaf back to 0.6 — it edits with a plain markdown textarea
+  instead: the same autosave, the same guard against overwriting a change made
+  elsewhere (and the same "Take theirs / Keep mine" choice), read-only without
+  edit access. It never sends the editor's messages to your page either way.
+- **Drag and drop** in the panel's folder tree is core's `MediaDragDrop` hook.
+  Since `phoenix_kit` 3.6 that hook is in core's admin bundle, which a public
+  page fetches the first time the tree mounts for someone who may edit — so
+  after upgrading core, run `mix phoenix_kit.update` as core asks, or the tree
+  shows but nothing drags.
 
 The panel polls (`poll`, default 5 s) because a component cannot subscribe to
 anything, and shows every message inline. See `PhoenixKitKnowledgeBase.Web.NotesPanel`.

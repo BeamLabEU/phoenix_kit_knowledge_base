@@ -187,9 +187,18 @@ that app; what matters here:
   clause is a `FunctionClauseError` that takes the view down with the editor in
   it.
 - Core's `MediaDragDrop` hook speaks a vocabulary wider than this module uses —
-  `move_selected_to_folder`, `delete_selected`, `long_press_select` come from a
-  multi-select feature we do not have. They are matched and dropped on purpose:
-  unhandled, they crash the LiveView.
+  `move_selected_to_folder`, `delete_selected`, `long_press_select`, and since
+  core 3.6 `box_select`, `move_picked_to_folder`, `pick_quick_confirm`, come
+  from multi-select and picker features we do not have. They are matched and
+  dropped on purpose: unhandled, they crash the LiveView. When core is bumped,
+  grep `phoenix_kit_admin.js` for the hook's `pushEventTo` names again.
+  (`NotesPanel` has a catch-all `handle_event/3` instead: it runs inside a
+  host's page.)
+- Since core 3.6, `MediaDragDrop` lives in core's **admin bundle**
+  (`phoenix_kit_admin.js`): `phoenix_kit.js` registers a stub that fetches the
+  bundle on first mount. A notes panel on a public page therefore loads it the
+  first time someone who may edit sees the tree — working as designed, but a
+  host that skipped `mix phoenix_kit.update` after core 3.6 gets no drag.
 - Anything that **moves the open note** must re-read its row (`refresh_open_note/1`).
   `@note.relative_path` is what `save_content/3` writes against, and the
   `:kb_note_saved` broadcast cannot fix it — it comes from the same pid, so

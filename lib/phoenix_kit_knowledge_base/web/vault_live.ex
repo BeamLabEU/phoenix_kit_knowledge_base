@@ -653,12 +653,15 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
   end
 
   # Core's hook also speaks a multi-select vocabulary — a long press selects,
-  # and dragging a selected item moves or deletes the whole selection. This
-  # module has no selection, so these are acknowledged and dropped. They must
-  # still be *matched*: an unhandled `handle_event/3` is a FunctionClauseError,
-  # which takes the LiveView down and loses whatever is in the editor.
+  # dragging a selected item moves or deletes the whole selection, a box drawn
+  # or a Shift-click selects a range (core 3.6), and a picker confirms a pick.
+  # This module has no selection, so these are acknowledged and dropped. They
+  # must still be *matched*: an unhandled `handle_event/3` is a
+  # FunctionClauseError, which takes the LiveView down and loses whatever is in
+  # the editor.
   def handle_event(event, _params, socket)
-      when event in ~w(move_selected_to_folder delete_selected long_press_select) do
+      when event in ~w(move_selected_to_folder delete_selected long_press_select
+                       box_select move_picked_to_folder pick_quick_confirm) do
     {:noreply, socket}
   end
 

@@ -35,8 +35,10 @@ defmodule PhoenixKitKnowledgeBase.DataCase do
   setup tags do
     pid = Sandbox.start_owner!(TestRepo, shared: not tags[:async])
 
-    # The lock's Leaf may predate `notify`; the panel's editor path is what these
-    # tests exercise, with Leaf's messages delivered the way `notify` would.
+    # Pinned rather than detected, so the suite drives the panel's Leaf branch
+    # whichever Leaf resolves (`LEAF_PATH`, an older lock); the plain-textarea
+    # tests turn it off themselves. `LeafContractTest` checks detection against
+    # the locked Leaf.
     Application.put_env(:phoenix_kit_knowledge_base, :leaf_notify, true)
 
     root = Path.join(System.tmp_dir!(), "kb_it_#{System.unique_integer([:positive])}")

@@ -101,8 +101,11 @@ defmodule PhoenixKitKnowledgeBase.MixProject do
       # already vendors its JS into `phoenix_kit.js` and registers the hook on
       # `window.PhoenixKitHooks`, so this needs no host setup; the dependency is
       # declared because this module calls `Leaf` directly rather than relying
-      # on it arriving transitively through core.
-      pk_dep(:leaf, "~> 0.5"),
+      # on it arriving transitively through core. Floor 0.6.1: `Leaf.Collab`
+      # (0.6.0) and `wiki_links: %{follow: :click}` (0.6.1) are used
+      # unconditionally. The notes panel's Leaf editor needs 0.11 (`notify`)
+      # and falls back to a textarea below it, so that is not a floor.
+      pk_dep(:leaf, ">= 0.6.1 and < 1.0.0"),
       {:phoenix_live_view, "~> 1.1"},
       {:ex_doc, "~> 0.34", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

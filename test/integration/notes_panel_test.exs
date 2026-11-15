@@ -1056,4 +1056,169 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       end)
     end
   end
+
+  # `@note.content_hash` is what the stale guard compares the file against. A
+  # row read after someone else saved carries their hash; taking it whole lets
+  # the next keystroke overwrite their save with no prompt.
+  describe "a peer's save is never adopted by the open editor" do
+    setup %{me: me} do
+      {vault, note} = note!(me, "Shared", @path, :shared, "v1")
+      {:ok, calls} = Notes.create_folder(vault, "Clients/Acme", "Calls")
+      %{vault: vault, note: note, calls: calls}
+    end
+
+    defp type(lv, note, markdown) do
+      leaf(
+        lv,
+        {:leaf_changed,
+         %{editor_id: NotesPanel.editor_id("panel", note), markdown: markdown, dirty: true}}
+      )
+    end
+
+    defp peer_saves(vault, note) do
+      {:ok, _} = Notes.update_content(vault, Notes.get_note(vault.uuid, note.uuid), "peer edit")
+    end
+
+    defp on_disk(vault, note), do: file(vault, Notes.get_note(vault.uuid, note.uuid))
+
+    test "dragging the open note into a folder", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      peer_saves(vault, note)
+
+      html =
+        fire(lv, "move_file_to_folder", %{"file_uuid" => note.uuid, "folder_uuid" => calls.uuid})
+
+      assert html =~ "Someone else changed this note."
+
+      html = type(lv, note, "v1 and mine")
+      assert html =~ "This note was changed somewhere else"
+      assert on_disk(vault, note) == "peer edit"
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme/Calls"
+    end
+
+    test "moving a folder while a note is open", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, archive} = Notes.create_folder(vault, "Clients/Acme", "Archive")
+      {:ok, _} = Notes.move_note(vault, note, "Clients/Acme/Calls")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      peer_saves(vault, note)
+
+      fire(lv, "move_folder_to_folder", %{
+        "folder_uuid" => calls.uuid,
+        "target_uuid" => archive.uuid
+      })
+
+      assert type(lv, note, "v1 and mine") =~ "This note was changed somewhere else"
+      assert on_disk(vault, note) == "peer edit"
+
+      # Their version, then typing on, saves where the note went.
+      fire(lv, "reload_note")
+      type(lv, note, "peer edit and mine")
+      assert on_disk(vault, note) == "peer edit and mine"
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == "Clients/Acme/Archive/Calls"
+    end
+
+    test "renaming the open note", %{conn: conn, me: me, vault: vault, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      peer_saves(vault, note)
+      fire(lv, "start_rename")
+      fire(lv, "rename_note", %{"value" => "Renamed"})
+
+      assert type(lv, note, "v1 and mine") =~ "This note was changed somewhere else"
+      assert %{title: "Renamed"} = Notes.get_note(vault.uuid, note.uuid)
+      assert on_disk(vault, note) == "peer edit"
+    end
+
+    test "opening the note that is already open", %{conn: conn, me: me, vault: vault, note: note} do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      peer_saves(vault, note)
+      assert tick(lv) =~ "Someone else changed this note."
+
+      assert fire(lv, "open_note", %{"uuid" => note.uuid}) =~ "Someone else changed this note."
+      assert type(lv, note, "v1 and mine") =~ "This note was changed somewhere else"
+      assert on_disk(vault, note) == "peer edit"
+    end
+  end
+
+  describe "stale pictures of the panel's own state" do
+    setup %{me: me} do
+      {vault, note} = note!(me, "Open one")
+      {:ok, calls} = Notes.create_folder(vault, "Clients/Acme", "Calls")
+      %{vault: vault, note: note, calls: calls}
+    end
+
+    test "trash acts on the note as it is now, not as it was opened", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      {:ok, _} = Notes.create_folder(vault, "Clients", "Globex")
+      {:ok, out} = Notes.move_note(vault, note, "Clients/Globex")
+
+      assert fire(lv, "trash_note") =~ "That note was moved or deleted."
+      assert %{folder_path: "Clients/Globex"} = Notes.get_note(vault.uuid, note.uuid)
+      assert File.exists?(Path.join(Storage.vault_path(vault.directory), out.relative_path))
+    end
+
+    test "a note is not created in a folder moved away since it was shown", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      calls: calls
+    } do
+      {:ok, archive} = Notes.create_folder(vault, "Clients/Acme", "Archive")
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      {:ok, _} = Notes.relocate_folder(vault, calls, "#{archive.relative_path}/Calls")
+
+      assert fire(lv, "new_note") =~ "That folder was moved or deleted."
+      refute File.exists?(Path.join(Storage.vault_path(vault.directory), "Clients/Acme/Calls"))
+      assert Notes.get_folder_by_path(vault.uuid, "Clients/Acme/Calls") == nil
+    end
+
+    test "closing a note after access was withdrawn shows no fresh listing", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      Application.put_env(:phoenix_kit_knowledge_base, :authorize, {Hooks, :nobody})
+
+      {:ok, _} =
+        Notes.create_note(vault, %{title: "Written later", folder_path: "Clients/Acme"}, me.uuid)
+
+      refute fire(lv, "close_note") =~ "Written later"
+    end
+
+    test "a tick from an earlier timer chain is dropped", %{conn: conn, me: me, vault: vault} do
+      {:ok, lv, _} = mount_panel(conn, me)
+
+      {:ok, _} =
+        Notes.create_note(vault, %{title: "Not yet listed", folder_path: "Clients/Acme"}, me.uuid)
+
+      Phoenix.LiveView.send_update(lv.pid, NotesPanel, id: "panel", tick: make_ref())
+      refute render(lv) =~ "Not yet listed"
+      assert tick(lv) =~ "Not yet listed"
+    end
+  end
 end

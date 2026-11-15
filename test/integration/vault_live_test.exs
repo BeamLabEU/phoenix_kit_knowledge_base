@@ -206,6 +206,33 @@ defmodule PhoenixKitKnowledgeBase.Integration.VaultLiveTest do
     end
   end
 
+  # Core's `MediaDragDrop` pushes these for selection and picker features this
+  # module does not have. Unmatched, each would be a FunctionClauseError that
+  # takes the page down with the editor in it.
+  describe "core's drag hook vocabulary" do
+    test "selection and picker events are dropped, not crashed on", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+
+      for {event, params} <- [
+            {"move_selected_to_folder", %{"folder-uuid" => ""}},
+            {"delete_selected", %{}},
+            {"long_press_select", %{"type" => "file", "uuid" => note.uuid}},
+            {"box_select", %{"files" => [note.uuid], "folders" => [], "additive" => false}},
+            {"move_picked_to_folder", %{"folder-uuid" => ""}},
+            {"pick_quick_confirm", %{"file-uuid" => note.uuid}}
+          ] do
+        render_hook(lv, event, params)
+      end
+
+      assert render(lv) =~ "Ideas"
+      assert Notes.get_note(vault.uuid, note.uuid).relative_path == "papers/Ideas.md"
+    end
+  end
+
   describe "place_new_note/2" do
     test "a bare title stays in the selected folder" do
       assert VaultLive.place_new_note("Ideas", "papers") == {:ok, "papers", "Ideas"}

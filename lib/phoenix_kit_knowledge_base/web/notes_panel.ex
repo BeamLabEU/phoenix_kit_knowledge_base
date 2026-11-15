@@ -73,9 +73,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # Whether the installed Leaf can send its messages to this component
   # (`notify`, Leaf 0.11). An older Leaf sends them to the LiveView hosting the
   # panel — a page that never asked for them, and crashes on them without a
-  # catch-all `handle_info`. Without it the panel shows a note's text and no
-  # editor. Read from Leaf's own attribute declarations rather than its version,
-  # so an unreleased checkout that has the feature counts.
+  # catch-all `handle_info`. Without it the panel edits in a plain textarea.
+  # Read from Leaf's own attribute declarations rather than its version, so an
+  # unreleased checkout that has the feature counts.
+  #
+  # `Code.ensure_loaded?/1` first: `function_exported?/3` does not load a
+  # module, and in interactive mode (dev) Leaf is not loaded until something
+  # renders it — so the panel answered "no" until another page had shown a Leaf
+  # editor, then swapped its textarea for Leaf mid-session.
   #
   # `config :phoenix_kit_knowledge_base, :leaf_notify, true | false` overrides
   # the detection; the tests use it to exercise both sides with one Leaf.
@@ -88,7 +93,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   end
 
   defp detect_leaf_notify do
-    with true <- function_exported?(Leaf, :__components__, 0),
+    with true <- Code.ensure_loaded?(Leaf),
+         true <- function_exported?(Leaf, :__components__, 0),
          %{attrs: attrs} <- Map.get(Leaf.__components__(), :leaf_editor) do
       Enum.any?(attrs, &(&1.name == :notify))
     else
@@ -122,10 +128,18 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       else: {:ok, socket}
   end
 
-  # One chain of timers per panel: a tick clears the flag and re-arms, and a
-  # host re-render in between finds it set and does not start a second chain.
-  def update(%{tick: true}, socket) do
-    {:ok, socket |> assign(:timer_armed?, false) |> load() |> check_open_note() |> arm_timer()}
+  # One chain of timers per panel: a host re-render finds `timer_ref` set and
+  # does not start a second one. A tick carries the ref it was armed with, and
+  # one that does not match is dropped: it belongs to an earlier instance under
+  # the same id (the host stopped rendering the panel and rendered it again
+  # within `poll`), and re-arming it would add a chain for good. `tick: true`
+  # is a refresh from outside the chain (the tests) and leaves the chain alone.
+  def update(%{tick: true}, socket), do: {:ok, refresh(socket)}
+
+  def update(%{tick: ref}, socket) when is_reference(ref) do
+    if ref == socket.assigns[:timer_ref],
+      do: {:ok, socket |> assign(:timer_ref, nil) |> refresh() |> arm_timer()},
+      else: {:ok, socket}
   end
 
   def update(assigns, socket) do
@@ -192,7 +206,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:people, %{})
     |> assign(:admin_href, nil)
     |> assign(:admin_href_for, nil)
-    |> assign(:timer_armed?, false)
+    |> assign(:timer_ref, nil)
     # Core's FolderExplorer, rooted at the panel's folder. `expanded_folders`
     # holds folder uuids, which is the component's contract.
     |> assign(:tree, [])
@@ -402,15 +416,12 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       nil ->
         socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
-      %Note{content_hash: hash} when hash != note.content_hash ->
-        assign(socket, :remote_change, true)
-
-      # Same bytes, maybe a new name or folder (renamed elsewhere, still inside
-      # the fence). Taken silently — the buffer is unaffected, and `save/3`
-      # writes against `@note.relative_path`, which would otherwise be a path
-      # that no longer exists.
+      # Maybe a new name or folder (renamed elsewhere, still inside the fence):
+      # `save/3` writes against `@note.relative_path`, which would otherwise be
+      # a path that no longer exists. Same bytes are taken silently; new bytes
+      # only as far as the path, and announced (`adopt_row/2`).
       %Note{} = fresh ->
-        assign(socket, :note, fresh)
+        adopt_row(socket, fresh)
     end
   end
 
@@ -426,15 +437,18 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   defp release_note_without_vault(socket), do: socket
 
   defp arm_timer(%{assigns: %{poll: ms}} = socket) when is_integer(ms) and ms > 0 do
-    if connected?(socket) and socket.assigns[:timer_armed?] != true do
-      Phoenix.LiveView.send_update_after(__MODULE__, [id: socket.assigns.id, tick: true], ms)
-      assign(socket, :timer_armed?, true)
+    if connected?(socket) and is_nil(socket.assigns[:timer_ref]) do
+      ref = make_ref()
+      Phoenix.LiveView.send_update_after(__MODULE__, [id: socket.assigns.id, tick: ref], ms)
+      assign(socket, :timer_ref, ref)
     else
       socket
     end
   end
 
   defp arm_timer(socket), do: socket
+
+  defp refresh(socket), do: socket |> load() |> check_open_note()
 
   # ── Events ────────────────────────────────────────────────────────────────
 
@@ -622,7 +636,8 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   def handle_event("create_folder", %{"name" => name}, socket) do
     with_access(socket, :edit, fn socket ->
-      with {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
+      with :ok <- current_folder_still_there(socket),
+           {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
            {:ok, _folder} <- Notes.create_folder(vault, socket.assigns.current_folder, name) do
         socket
         |> assign(:vault, vault)
@@ -630,6 +645,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         |> load_listing()
         |> assign_admin_href()
       else
+        {:error, :folder_gone} -> folder_gone(socket)
         {:error, reason} -> notice(socket, :error, error_message(reason))
       end
     end)
@@ -638,14 +654,16 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   def handle_event("open_note", %{"uuid" => uuid}, socket) do
     with_access(socket, :view, fn socket ->
       case fenced_note(socket, uuid) do
-        %Note{} = note -> open_note(socket, note)
+        %Note{} = note -> switch_to(socket, note)
         nil -> socket
       end
     end)
   end
 
+  # Closed whatever access says; the listing behind it is re-read only for
+  # someone who may still see it.
   def handle_event("close_note", _params, socket) do
-    {:noreply, socket |> close_note() |> load_listing()}
+    socket |> close_note() |> with_access(:view, &load_listing/1)
   end
 
   def handle_event("start_rename", _params, socket) do
@@ -679,21 +697,15 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # usual reason a save fails with `:missing_file` is that the note was moved,
   # and where it went may be outside this panel's folder.
   def handle_event("reload_note", _params, socket) do
-    with_open_note(socket, :view, fn socket, _vault, note ->
-      case fenced_note(socket, note.uuid) do
-        nil ->
-          socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
+    with_open_note(socket, :view, fn socket, _vault, fresh ->
+      refresh_editor(socket, fresh)
 
-        fresh ->
-          refresh_editor(socket, fresh)
-
-          socket
-          |> assign(:note, fresh)
-          |> assign(:content, fresh.content || "")
-          |> assign(:conflict, false)
-          |> assign(:remote_change, false)
-          |> assign(:save_status, :saved)
-      end
+      socket
+      |> assign(:note, fresh)
+      |> assign(:content, fresh.content || "")
+      |> assign(:conflict, false)
+      |> assign(:remote_change, false)
+      |> assign(:save_status, :saved)
     end)
   end
 
@@ -749,7 +761,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp apply_rename(socket, vault, note, title) do
     case Notes.rename_note(vault, note, title, actor_uuid: socket.assigns.user.uuid) do
-      {:ok, renamed} -> socket |> assign(:note, renamed) |> assign(:renaming?, false)
+      {:ok, renamed} -> socket |> adopt_row(renamed) |> assign(:renaming?, false)
       {:error, reason} -> notice(socket, :error, error_message(reason))
     end
   end
@@ -859,23 +871,52 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end
   end
 
-  # The open note's row after a move: same bytes, new path. Only the row is
-  # taken — the editor's buffer is untouched.
+  # The open note's row after a move. The editor's buffer is untouched.
   defp follow_moved_note(
          %{assigns: %{note: %Note{uuid: uuid}}} = socket,
          %Note{uuid: uuid} = fresh
        ),
-       do: assign(socket, :note, fresh)
+       do: adopt_row(socket, fresh)
 
   defp follow_moved_note(%{assigns: %{note: %Note{}}} = socket, nil),
     do: socket |> close_note() |> notice(:info, gettext("That note was moved or deleted."))
 
   defp follow_moved_note(socket, _moved), do: socket
 
+  # A fresh row for the open note, after it moved or was renamed. It is taken
+  # whole only while its bytes are the ones the buffer was loaded from:
+  # `@note.content_hash` is what the stale guard compares the file against, and
+  # a row read after someone else saved carries *their* hash — the next
+  # keystroke would then overwrite their save without a word. Otherwise only
+  # where the note now lives is taken, and their change is announced; the next
+  # save is refused as stale and the writer chooses (AGENTS.md: never replace
+  # `@note` with a peer's row).
+  defp adopt_row(
+         %{assigns: %{note: %Note{content_hash: hash}}} = socket,
+         %Note{content_hash: hash} = fresh
+       ),
+       do: assign(socket, :note, fresh)
+
+  defp adopt_row(%{assigns: %{note: %Note{} = note}} = socket, %Note{} = fresh) do
+    socket
+    |> assign(
+      :note,
+      %{
+        note
+        | relative_path: fresh.relative_path,
+          folder_path: fresh.folder_path,
+          title: fresh.title,
+          title_key: fresh.title_key
+      }
+    )
+    |> assign(:remote_change, true)
+  end
+
   @numbered_attempts 20
 
   defp create_and_open(socket, title) do
-    with {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
+    with :ok <- current_folder_still_there(socket),
+         {:ok, vault} <- Places.ensure(socket.assigns.place, socket.assigns.user),
          {:ok, note} <- create_note(socket, vault, title) do
       socket
       |> assign(:vault, vault)
@@ -885,6 +926,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
       |> open_note(note)
       |> assign(:just_created?, true)
     else
+      {:error, :folder_gone} -> folder_gone(socket)
       {:error, reason} -> notice(socket, :error, error_message(reason))
     end
   end
@@ -926,6 +968,27 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     )
   end
 
+  # The folder being looked at, asked about again before something is created
+  # in it: it may have been moved or deleted since the last poll, and creating
+  # in its old path would quietly bring it back, empty, beside where it went.
+  # The panel's own folder is created on demand (`Places.ensure/2`), so it is
+  # never "gone".
+  defp current_folder_still_there(%{assigns: %{vault: nil}}), do: :ok
+
+  defp current_folder_still_there(%{assigns: assigns}) do
+    %{vault: vault, place: place, current_folder: current} = assigns
+
+    if current == place.folder or Notes.get_folder_by_path(vault.uuid, current),
+      do: :ok,
+      else: {:error, :folder_gone}
+  end
+
+  defp folder_gone(socket) do
+    socket
+    |> show_folder(socket.assigns.place.folder)
+    |> notice(:info, gettext("That folder was moved or deleted."))
+  end
+
   defp numbered_title(n), do: gettext("Note %{number}", number: n)
 
   # The translated "Note %{number}" with the number as a capture, so the next
@@ -954,13 +1017,31 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     end
   end
 
+  # The open note, read again through the fence: `@note` is the last poll's
+  # picture (with `poll: 0`, the opening's), and the note may since have been
+  # moved out of the panel's folder or deleted — trashing or renaming it by its
+  # old row would then act on somebody else's note, or on whatever file has
+  # taken its old path. `fun` gets the fresh row; `@note` is left as it is
+  # (`adopt_row/2` decides what of a fresh row the buffer may take).
   defp with_open_note(socket, action, fun) do
     with_access(socket, action, fn socket ->
       case socket.assigns do
-        %{note: %Note{} = note, vault: vault} when not is_nil(vault) -> fun.(socket, vault, note)
-        _ -> socket
+        %{note: %Note{} = note, vault: vault} when not is_nil(vault) ->
+          with_fresh_note(socket, vault, fenced_note(socket, note.uuid), fun)
+
+        _ ->
+          socket
       end
     end)
+  end
+
+  defp with_fresh_note(socket, vault, %Note{} = fresh, fun), do: fun.(socket, vault, fresh)
+
+  defp with_fresh_note(socket, _vault, nil, _fun) do
+    socket
+    |> close_note()
+    |> load_listing()
+    |> notice(:info, gettext("That note was moved or deleted."))
   end
 
   defp fenced_note(%{assigns: %{vault: nil}}, _uuid), do: nil
@@ -983,6 +1064,13 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:notice, nil)
     |> assign(:just_created?, false)
   end
+
+  # Opening the note that is already open does nothing. The editor's id is per
+  # note, so Leaf keeps its buffer; re-opening would only swap `@note` for the
+  # current row — arming the stale guard with a peer's hash, so the next
+  # keystroke overwrites their save — and clear the banner announcing it.
+  defp switch_to(%{assigns: %{note: %Note{uuid: uuid}}} = socket, %Note{uuid: uuid}), do: socket
+  defp switch_to(socket, note), do: socket |> close_note() |> open_note(note)
 
   defp close_note(socket) do
     socket
@@ -1068,7 +1156,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     case Links.resolve(fenced_resolver(socket), Markdown.normalize_title(target), from_folder) do
       %{uuid: uuid} ->
         case fenced_note(socket, uuid) do
-          %Note{} = note -> socket |> close_note() |> open_note(note)
+          %Note{} = note -> switch_to(socket, note)
           nil -> socket
         end
 
