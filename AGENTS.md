@@ -142,26 +142,15 @@ that app; what matters here:
 
 **Core's components**
 
-> **The declared constraint is `>= 2.65.0 and < 4.0.0`.** The floor is the
-> oldest core this module is *verified* against. The oldest it *compiles*
-> against is 2.14.0, the first published core carrying both
-> `FolderExplorer`'s `items` attr and `:item` slot (2.13.15 has those; 2.13.14
-> was never published) and the `<.context_menu>` components the vault tree's
-> right-click menus use. The floor used to be 2.14.0, and that was not
-> harmless: cores up to 2.22.20 declare leaf with an open ceiling (`~> 0.7`,
-> i.e. `< 1.0.0`), while every core from 2.22.21 on caps it at a tested minor
-> (3.4.0: `~> 0.10.0`). The day Hex had a leaf newer than the newest
-> core admits, `mix deps.update --all` "solved" it by backtracking core to
-> 2.22.20, and beamlab_countries and phoenix_kit_templates with it. So when
-> leaf is ahead of core, **the lock holds leaf back. That is correct; don't
-> loosen this floor to get leaf back.** Leaf moves once core publishes a
-> release that admits it. The upper bound
-> admits core 3.x: verified against 3.0.0, which still calls
+> **The declared constraint is `>= 3.5.0 and < 4.0.0`**: floor 3.5.0, ceiling
+> open through every core 3.x. Core caps leaf at a tested minor, so when leaf
+> is ahead of core, **the lock holds leaf back. That is correct; don't loosen
+> this floor to get leaf back** (a floor at or below 2.22.20, whose leaf
+> ceiling is open, lets `mix deps.update --all` "solve" it by backtracking
+> core). Leaf moves once core publishes a release that admits it. Core calls
 > `migration_module/0` + `migrated_version_runtime/1` / `current_version/0`
-> for module-owned tables — this module's coordinator already speaks that.
-> Core 3.0 requires an existing install to be at V225 (2.65.0) first; that is
-> a host-upgrade concern, not a code one. For cross-repo work against a local
-> checkout: `PHOENIX_KIT_PATH=../phoenix_kit`.
+> for module-owned tables — this module's coordinator speaks that. For
+> cross-repo work against a local checkout: `PHOENIX_KIT_PATH=../phoenix_kit`.
 
 - `PhoenixKitWeb.Components.FolderExplorer` is **not** in core's default
   imports — `use PhoenixKitWeb, :live_view` brings in `Components.Core.*` only.
@@ -178,7 +167,7 @@ that app; what matters here:
   to change if a vault outgrows what a sidebar can show.
 - `Folder` used to carry a virtual `:color` because core read `folder.color`
   with a dot and raised `KeyError`. Core reads it with `Map.get/2` since
-  2.13.14, and the floor is 2.65.0, so the field is gone.
+  2.13.14, long below the floor, so the field is gone.
 - **The admin pages draw no header of their own.** Core's admin bar renders
   `page_section / page_crumbs / page_title` and, beside them, the page's
   `page_toolbar: {Module, :fun}` — called with the LiveView's own assigns, so
