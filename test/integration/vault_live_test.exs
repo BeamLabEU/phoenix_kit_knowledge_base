@@ -212,6 +212,29 @@ defmodule PhoenixKitKnowledgeBase.Integration.VaultLiveTest do
       assert html =~ "This note changed since you opened it"
     end
 
+    # A rename is a move, and a move is stale-checked: renaming over a save
+    # this buffer never saw is refused with the conflict choice, and the
+    # peer's bytes stay where they are.
+    test "renaming the open note after a peer's save is refused, not taken over", %{
+      conn: conn,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, _} = Notes.update_content(vault, note, "their version")
+      render(lv)
+
+      html = lv |> form("#kb-rename-form", %{"title" => "Better ideas"}) |> render_submit()
+      assert html =~ "This note changed since you opened it"
+
+      type(lv, note, "first draft, and mine")
+      assert file(vault, "papers/Ideas.md") == "their version"
+
+      refute File.exists?(
+               Path.join(Storage.vault_path(vault.directory), "papers/Better ideas.md")
+             )
+    end
+
     test "raises the banner and keeps the guard: the next keystroke does not overwrite them", %{
       conn: conn,
       vault: vault,

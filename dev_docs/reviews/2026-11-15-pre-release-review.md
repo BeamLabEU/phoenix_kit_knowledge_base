@@ -185,3 +185,33 @@ re-open of the open note no longer overwrites a colleague's save; trash and
 rename act on the note as it is now; creating in a moved folder no longer
 recreates it; Leaf detection in dev; poll timer chains. New features, so 0.2.0
 rather than 0.1.1.
+
+## Addendum: the Grok and Codex rechecks (`1a86ff8`, `b8bbc13`)
+
+I re-read both commits against the code, and both rechecks' findings are real.
+This review missed them:
+
+- Saves and Keep mine wrote the path the note had when it was opened.
+- Folder moves minted new uuids.
+- A reused panel kept the previous user's or path's editor.
+- The vault page went on trusting membership it had checked once.
+
+What I checked in their fixes:
+
+- `relocate_folder/3` rewrites the folder rows before reindexing. A folder's
+  `name` is derived from its path in `Folder.changeset/2`, so the in-place
+  rewrite renames correctly.
+- A rename or move on the vault page sends the located row, which keeps the
+  buffer's hash. `move_and_reindex/4` runs `check_not_stale`, so a rename over
+  a save the buffer never saw is refused with the conflict choice. Nothing is
+  adopted. I suspected the opposite, and the test I added
+  (`vault_live_test.exs`, "renaming the open note after a peer's save is
+  refused") pins what actually happens.
+- The access hooks run `Vaults.fetch_for/2` (one or two queries) on every
+  event and message, Leaf's included. That is acceptable at typing rate.
+- The panel's context check compares `%Places{}`, whose fields are all
+  stable, so an ordinary host re-render keeps the editor.
+
+Gate on the combined tree: `mix precommit` is green, and `mix test` runs 382
+tests with 0 failures, integration included. The host-app layers are still
+not run (`/www/app` is absent).
