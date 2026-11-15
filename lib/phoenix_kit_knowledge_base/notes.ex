@@ -206,9 +206,13 @@ defmodule PhoenixKitKnowledgeBase.Notes do
   resolving — so every key the subtree answered to, before and after, is
   re-resolved together.
 
-  Folder rows are reconciled against the disk rather than rewritten from the
-  old prefix, so empty subdirectories move with the rest instead of vanishing
-  from the sidebar until the next rescan.
+  Folder rows keep their uuid. The sidebar, a drag target and the set of
+  expanded folders are all keyed by it, so deleting the row and inserting
+  another at the new path would make a click on the old picture miss the
+  folder that just moved. `sync_folders/1` still runs afterwards: an empty
+  directory that was never indexed is picked up there, and a folder moved on
+  disk by something other than this function is reconciled by the rescan,
+  which has no uuid to keep.
   """
   @spec relocate_folder(Vault.t(), Folder.t(), String.t()) ::
           {:ok, Folder.t()} | {:error, term()}
@@ -220,9 +224,12 @@ defmodule PhoenixKitKnowledgeBase.Notes do
          affected <- notes_under(vault.uuid, from),
          old_keys <- Enum.flat_map(affected, &Links.keys_for/1),
          :ok <- Storage.move_folder(vault.directory, from, target) do
-      # One resolver for the whole subtree. Without it `index_entry/4` builds a
-      # fresh one per note — a full scan of every note in the vault, thirty
-      # times over for a folder of thirty notes.
+      # Folder rows first. `index_entry/4` indexes the folder a note landed in,
+      # which would insert the new path as a new uuid while the old row still
+      # holds the old one. The rewrite would then lose the unique index and
+      # `sync_folders/1` would throw the old uuid away. One resolver for the
+      # whole subtree: without it `index_entry/4` builds a fresh one per note.
+      move_folder_rows(vault, from, target)
       resolver = Links.resolver(vault.uuid)
       {new_keys, failed} = reindex_moved_notes(vault, affected, from, target, resolver)
       sync_folders(vault)
@@ -285,6 +292,43 @@ defmodule PhoenixKitKnowledgeBase.Notes do
       end
     end)
   end
+
+  # The folder row's path *is* `from`; a note's path is `from` plus a file.
+  # Longest path first, so a row is never parked on a path a not-yet-moved
+  # descendant still occupies.
+  defp move_folder_rows(vault, from, target) do
+    vault.uuid
+    |> folders_under(from)
+    |> Enum.sort_by(&byte_size(&1.relative_path), :desc)
+    |> Enum.each(fn folder ->
+      new_path = swap_prefix(folder.relative_path, from, target)
+
+      case folder |> Folder.changeset(%{"relative_path" => new_path}) |> repo().update() do
+        {:ok, _} ->
+          :ok
+
+        {:error, reason} ->
+          Logger.error(
+            "[knowledge_base] could not keep folder #{folder.uuid} at #{new_path}: #{Errors.for_log(reason)}"
+          )
+      end
+    end)
+  end
+
+  defp folders_under(vault_uuid, folder_path) do
+    prefix = folder_path <> "/"
+
+    repo().all(
+      from(f in Folder,
+        where:
+          f.vault_uuid == ^vault_uuid and
+            (f.relative_path == ^folder_path or
+               like(f.relative_path, ^(escape_like(prefix) <> "%")))
+      )
+    )
+  end
+
+  defp swap_prefix(path, from, target) when path == from, do: target
 
   defp swap_prefix(path, from, target) do
     case String.replace_prefix(path, from <> "/", "") do
@@ -660,12 +704,42 @@ defmodule PhoenixKitKnowledgeBase.Notes do
     end
   end
 
+  @doc false
+  # The row a save must write through.
+  #
+  # `open` is the row the editor loaded. Its `content_hash` is what the stale
+  # guard compares the file against, so a peer's hash must not replace it: the
+  # next keystroke would look current and overwrite their save. `fresh` is that
+  # note read again. The file may have moved since, and the location has to
+  # come from `fresh` — `force: true` ("Keep mine") skips the guard, and
+  # `index_entry/4` finds the row by path, so writing the old path creates a
+  # second file there or overwrites a different note that has taken it.
+  #
+  # `nil` means the row is gone. The caller decides whether that is "do not
+  # write"; this only refuses to invent a location.
+  @spec located_for_save(Note.t(), Note.t() | nil) :: Note.t()
+  def located_for_save(%Note{} = open, nil), do: open
+
+  def located_for_save(%Note{content_hash: hash}, %Note{content_hash: hash} = fresh), do: fresh
+
+  def located_for_save(%Note{} = open, %Note{} = fresh) do
+    %{
+      open
+      | relative_path: fresh.relative_path,
+        folder_path: fresh.folder_path,
+        title: fresh.title,
+        title_key: fresh.title_key
+    }
+  end
+
   @doc """
   Save new content for a note.
 
   Guarded against clobbering an external edit — see the moduledoc. Pass
   `force: true` to overwrite deliberately, which is what a "save anyway" button
-  would do.
+  would do. The note's `relative_path` must be where the file is now
+  (`located_for_save/2`): a force-save through a stale path does not miss, it
+  writes that path back into existence.
   """
   @spec update_content(Vault.t(), Note.t(), String.t(), keyword()) ::
           {:ok, Note.t()} | {:error, term()}

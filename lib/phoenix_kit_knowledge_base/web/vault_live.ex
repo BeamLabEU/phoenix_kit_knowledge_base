@@ -327,24 +327,8 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       is_nil(note) ->
         {:noreply, socket}
 
-      String.trim(title) in ["", note.title] ->
-        {:noreply, socket}
-
       true ->
-        case Notes.rename_note(socket.assigns.vault, note, title, actor_uuid: actor_uuid(socket)) do
-          {:ok, updated} ->
-            {:noreply,
-             socket
-             |> assign(:note, updated)
-             |> assign(:note_error, nil)
-             |> assign(:conflict, false)
-             |> load_workspace()
-             |> assign_note_links()
-             |> assign_trail()}
-
-          {:error, reason} ->
-            {:noreply, assign(socket, :note_error, error_message(reason))}
-        end
+        {:noreply, rename_open_note(socket, note, title)}
     end
   end
 
@@ -359,7 +343,11 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
     with :ok <- require_write(socket),
          false <- is_nil(note),
-         {:ok, _} <- Notes.delete_note(vault, note) do
+         # The open row's path is where the note was. Trashing that path after
+         # a move deletes whatever file has since landed there, and drops this
+         # note's row out from under the file that actually moved.
+         %Note{} = fresh <- Notes.get_note(vault.uuid, note.uuid),
+         {:ok, _} <- Notes.delete_note(vault, fresh) do
       {:noreply,
        socket
        |> put_flash(:info, gettext("Note moved to the trash."))
@@ -367,7 +355,16 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
        |> load_workspace()
        |> push_patch(to: Paths.vault(vault.slug))}
     else
-      _ -> {:noreply, put_flash(socket, :error, gettext("Could not delete that note."))}
+      nil ->
+        {:noreply,
+         socket
+         |> assign(:note, nil)
+         |> put_flash(:info, gettext("That note is no longer on disk."))
+         |> load_workspace()
+         |> push_patch(to: Paths.vault(vault.slug))}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, gettext("Could not delete that note."))}
     end
   end
 
@@ -380,8 +377,10 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     with :ok <- require_write(socket),
          {:ok, folder_path} <- existing_folder_path(socket, folder),
          %Note{} = note <- socket.assigns.note,
+         %Note{} = fresh <- Notes.get_note(socket.assigns.vault.uuid, note.uuid),
+         located = Notes.located_for_save(note, fresh),
          {:ok, updated} <-
-           Notes.move_note(socket.assigns.vault, note, folder_path,
+           Notes.move_note(socket.assigns.vault, located, folder_path,
              actor_uuid: actor_uuid(socket)
            ) do
       {:noreply, socket |> assign(:note, updated) |> assign(:conflict, false) |> load_workspace()}
@@ -725,18 +724,14 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
       Events.own?(payload) ->
         {:noreply, socket}
 
-      # Somebody saved the bytes we already have — a rescan re-stamping an
-      # mtime, a peer saving an identical buffer, or a rename or move, which
-      # keeps the bytes and changes the path. Nothing to show, but the row is
-      # taken: `save_content/3` writes against `@note.relative_path`, and after
-      # a rename elsewhere that is a file that no longer exists — the next
-      # keystroke would raise a conflict over a change nobody made to the text.
-      socket.assigns.note && payload.note_uuid == socket.assigns.note.uuid &&
-          payload.hash == socket.assigns.note.content_hash ->
-        {:noreply, socket |> follow_open_note() |> assign_trail()}
-
+      # This note, whatever the hash. A same-hash save is a rename or a move
+      # (the bytes did not change); a different hash is an edit, which may
+      # have moved as well. `follow_open_note/1` takes the location either
+      # way and the hash only when it is still the buffer's — taking a peer's
+      # hash lets the next keystroke overwrite them, and keeping a stale path
+      # makes "Keep mine" write that path back into existence.
       socket.assigns.note && payload.note_uuid == socket.assigns.note.uuid ->
-        {:noreply, apply_remote_note_change(socket)}
+        {:noreply, socket |> follow_open_note() |> assign_trail()}
 
       # A different note in this vault: the sidebar, backlinks and unresolved
       # list can all have moved, but nothing the reader is typing into has.
@@ -754,7 +749,7 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
         {:noreply,
          socket
          |> assign(:note, nil)
-         |> put_flash(:info, "This note was deleted by someone else.")
+         |> put_flash(:info, gettext("This note was deleted by someone else."))
          |> load_workspace()
          |> push_patch(to: Paths.vault(socket.assigns.vault.slug))}
 
@@ -906,36 +901,33 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
     {:noreply, socket}
   end
 
-  # A peer changed the note on screen. There is only one surface now and it may
-  # hold unsaved keystrokes, so the change is announced and never applied behind
-  # the author's back — `remote_change` raises the banner, the reload is theirs
-  # to ask for.
-  #
-  # `@note` is deliberately **not** replaced. Its `content_hash` is what the
-  # buffer was loaded from, and it is what the stale guard compares the file
-  # against. Taking the peer's row here (an earlier version did) armed the guard
-  # with *their* hash: the next keystroke saw the file "current" and wrote over
-  # their save — the one thing the banner exists to stop. Left alone, that
-  # keystroke is refused as `:stale` and the choice goes to the person.
+  # The banner only. `follow_open_note/1` has already taken the fresh location
+  # and kept this buffer's `content_hash`. Replacing the hash here (an earlier
+  # version took the peer's whole row) armed the guard with their bytes: the
+  # next keystroke saw the file "current" and wrote over their save.
   defp apply_remote_note_change(socket), do: assign(socket, :remote_change, true)
 
-  # The open note's row, re-read after something elsewhere may have moved it —
-  # but only taken while it still describes the bytes the buffer came from. A
-  # different hash is a change to the text, which is announced instead (see
-  # `apply_remote_note_change/1`); a vanished row is left to the deletion
-  # message, or to the next save's `:missing_file`.
+  # The open note's row, re-read after something elsewhere may have moved it.
+  # The location is taken even when the bytes changed (`located_for_save/2`):
+  # a move and an edit in the same breath used to leave `@note` pointing at
+  # the old path, and the next "Keep mine" wrote that path back into existence.
+  # The hash is taken only while it is still the buffer's. A different hash is
+  # announced (`apply_remote_note_change/1`); a vanished row is left to the
+  # deletion message, or to the next save.
   defp follow_open_note(%{assigns: %{note: nil}} = socket), do: socket
 
   defp follow_open_note(%{assigns: %{note: note}} = socket) do
     case Notes.get_note(socket.assigns.vault.uuid, note.uuid) do
-      %Note{content_hash: hash} = fresh when hash == note.content_hash ->
-        assign(socket, :note, fresh)
-
-      %Note{} ->
-        apply_remote_note_change(socket)
-
       nil ->
         socket
+
+      fresh ->
+        located = Notes.located_for_save(note, fresh)
+        socket = assign(socket, :note, located)
+
+        if located.content_hash == fresh.content_hash,
+          do: socket,
+          else: apply_remote_note_change(socket)
     end
   end
 
@@ -1225,41 +1217,113 @@ defmodule PhoenixKitKnowledgeBase.Web.VaultLive do
 
   defp save_content(%{assigns: %{note: nil}} = socket, _content, _opts), do: socket
 
+  defp save_content(%{assigns: %{can_write: false}} = socket, _content, _extra_opts), do: socket
+
   defp save_content(socket, content, extra_opts) do
-    if socket.assigns.can_write do
-      # `force` is never inferred from the conflict flag. Autosave means "saving
-      # again" is just continuing to type, so forcing on a raised flag would let
-      # somebody silently overwrite a colleague's work without ever choosing to.
-      # Only the Overwrite button passes it, once.
-      opts = Keyword.merge([actor_uuid: actor_uuid(socket), force: false], extra_opts)
+    # `force` is never inferred from the conflict flag. Autosave means "saving
+    # again" is just continuing to type, so forcing on a raised flag would let
+    # somebody silently overwrite a colleague's work without ever choosing to.
+    # Only the Overwrite button passes it, once.
+    opts = Keyword.merge([actor_uuid: actor_uuid(socket), force: false], extra_opts)
+    %{vault: vault, note: note} = socket.assigns
 
-      case Notes.update_content(socket.assigns.vault, socket.assigns.note, content, opts) do
-        {:ok, note} ->
-          socket
-          |> assign(:note, note)
-          |> assign(:save_status, :saved)
-          |> assign(:note_error, nil)
-          |> assign(:conflict, false)
-          # The link index just changed, so the panels that read it are stale.
-          |> assign_note_links()
-          |> load_sidebar_counts()
+    case Notes.get_note(vault.uuid, note.uuid) do
+      # The row is gone (trashed). Do not write the old path: the file is not
+      # this note any more, and something else may live there now.
+      nil ->
+        socket
+        |> assign(:note, nil)
+        |> assign(:conflict, false)
+        |> assign(:remote_change, false)
+        |> put_flash(:info, gettext("That note is no longer on disk."))
+        |> load_workspace()
+        |> push_patch(to: Paths.vault(vault.slug))
 
-        # The file moved underneath us. Do not write: raise the flag and let
-        # the author choose between reloading and overwriting, rather than
-        # picking a winner on their behalf.
-        {:error, reason} when reason in [:stale, :missing_file] ->
-          socket
-          |> assign(:save_status, :unsaved)
-          |> assign(:conflict, true)
-          |> assign(:note_error, error_message(reason))
+      fresh ->
+        located = Notes.located_for_save(note, fresh)
 
-        {:error, reason} ->
-          socket
-          |> assign(:save_status, :unsaved)
-          |> assign(:note_error, error_message(reason))
-      end
+        case Notes.update_content(vault, located, content, opts) do
+          {:ok, saved} ->
+            socket
+            |> assign(:note, saved)
+            |> assign(:save_status, :saved)
+            |> assign(:note_error, nil)
+            |> assign(:conflict, false)
+            # The link index just changed, so the panels that read it are stale.
+            |> assign_note_links()
+            |> load_sidebar_counts()
+
+          # The bytes changed underneath us. Do not write: raise the flag and
+          # let the author choose. The location is already the file's, so
+          # choosing to overwrite writes where the note is, not where it was.
+          {:error, reason} when reason in [:stale, :missing_file] ->
+            socket
+            |> assign(:note, located)
+            |> assign(:save_status, :unsaved)
+            |> assign(:conflict, true)
+            |> assign(:note_error, error_message(reason))
+
+          {:error, reason} ->
+            socket
+            |> assign(:note, located)
+            |> assign(:save_status, :unsaved)
+            |> assign(:note_error, error_message(reason))
+        end
+    end
+  end
+
+  # A rename of the open note, against the row as it is now. An unchanged
+  # title just closes the field. A peer's edit is not renamed over: the guard
+  # refuses, the location is kept, and the conflict choice is the same one a
+  # keystroke gets.
+  defp rename_open_note(socket, note, title) do
+    vault = socket.assigns.vault
+
+    case Notes.get_note(vault.uuid, note.uuid) do
+      nil -> note_no_longer_there(socket, vault)
+      fresh -> rename_located(socket, vault, Notes.located_for_save(note, fresh), title)
+    end
+  end
+
+  defp note_no_longer_there(socket, vault) do
+    socket
+    |> assign(:note, nil)
+    |> put_flash(:info, gettext("That note is no longer on disk."))
+    |> load_workspace()
+    |> push_patch(to: Paths.vault(vault.slug))
+  end
+
+  # An unchanged title just closes the field. The row's location is kept
+  # either way, so a later save still writes where the note is.
+  defp rename_located(socket, vault, located, title) do
+    if String.trim(title) in ["", located.title] do
+      assign(socket, :note, located)
     else
-      socket
+      commit_rename(socket, vault, located, title)
+    end
+  end
+
+  defp commit_rename(socket, vault, located, title) do
+    case Notes.rename_note(vault, located, title, actor_uuid: actor_uuid(socket)) do
+      {:ok, updated} ->
+        socket
+        |> assign(:note, updated)
+        |> assign(:note_error, nil)
+        |> assign(:conflict, false)
+        |> load_workspace()
+        |> assign_note_links()
+        |> assign_trail()
+
+      {:error, reason} when reason in [:stale, :missing_file] ->
+        socket
+        |> assign(:note, located)
+        |> assign(:conflict, true)
+        |> assign(:note_error, error_message(reason))
+
+      {:error, reason} ->
+        socket
+        |> assign(:note, located)
+        |> assign(:note_error, error_message(reason))
     end
   end
 

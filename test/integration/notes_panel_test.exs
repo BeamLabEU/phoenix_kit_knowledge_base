@@ -1153,6 +1153,61 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
       assert type(lv, note, "v1 and mine") =~ "This note was changed somewhere else"
       assert on_disk(vault, note) == "peer edit"
     end
+
+    # Before the next poll `@note` still names the path the note was opened
+    # at. "Keep mine" forces the write and skips the stale guard, so that path
+    # must not be where the bytes go: a different note may be there now.
+    test "keeping mine after a move writes where the note is, not where it was", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      {:ok, moved} = Notes.move_note(vault, note, calls.relative_path)
+      {:ok, _} = Notes.update_content(vault, moved, "peer edit")
+
+      {:ok, occupant} =
+        Notes.create_note(
+          vault,
+          %{title: note.title, folder_path: "Clients/Acme", content: "occupant"},
+          me.uuid
+        )
+
+      assert type(lv, note, "mine") =~ "changed somewhere else"
+      assert on_disk(vault, note) == "peer edit"
+      assert file(vault, occupant) == "occupant"
+
+      fire(lv, "overwrite_note")
+
+      saved = Notes.get_note(vault.uuid, note.uuid)
+      assert saved.folder_path == calls.relative_path
+      assert file(vault, saved) == "mine"
+      assert file(vault, Notes.get_note(vault.uuid, occupant.uuid)) == "occupant"
+    end
+
+    test "a keystroke before the next poll saves a moved note where it went", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "open_note", %{"uuid" => note.uuid})
+      {:ok, _} = Notes.move_note(vault, note, calls.relative_path)
+
+      html = type(lv, note, "typed after the move")
+
+      refute html =~ "changed somewhere else"
+      assert html =~ "Saved"
+      saved = Notes.get_note(vault.uuid, note.uuid)
+      assert saved.folder_path == calls.relative_path
+      assert file(vault, saved) == "typed after the move"
+      refute File.exists?(Path.join(Storage.vault_path(vault.directory), note.relative_path))
+    end
   end
 
   describe "stale pictures of the panel's own state" do
@@ -1208,6 +1263,57 @@ defmodule PhoenixKitKnowledgeBase.Integration.NotesPanelTest do
         Notes.create_note(vault, %{title: "Written later", folder_path: "Clients/Acme"}, me.uuid)
 
       refute fire(lv, "close_note") =~ "Written later"
+    end
+
+    test "the tree opens a folder where it is now, not where it was drawn", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      calls: calls
+    } do
+      {:ok, archive} = Notes.create_folder(vault, "Clients/Acme", "Archive")
+      {:ok, lv, _} = mount_panel(conn, me)
+      {:ok, _} = Notes.relocate_folder(vault, calls, "#{archive.relative_path}/Calls")
+
+      fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      fire(lv, "new_note")
+
+      assert %{folder_path: "Clients/Acme/Archive/Calls"} =
+               Notes.get_note_by_path(vault.uuid, "Clients/Acme/Archive/Calls/Note 1.md")
+
+      refute Notes.get_folder_by_path(vault.uuid, "Clients/Acme/Calls")
+    end
+
+    test "the tree does not open a folder that has left the panel", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      {:ok, _} = Notes.relocate_folder(vault, calls, "Clients/Globex/Calls")
+
+      assert fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid}) =~
+               "That folder was moved or deleted."
+
+      refute Notes.get_folder_by_path(vault.uuid, "Clients/Acme/Calls")
+    end
+
+    test "a poll leaves a folder that has since moved", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note,
+      calls: calls
+    } do
+      {:ok, lv, _} = mount_panel(conn, me)
+      fire(lv, "navigate_folder", %{"folder-uuid" => calls.uuid})
+      {:ok, _} = Notes.relocate_folder(vault, calls, "Clients/Globex/Calls")
+
+      html = tick(lv)
+      assert html =~ "That folder was moved or deleted."
+      assert html =~ note.title
+      refute Notes.get_folder_by_path(vault.uuid, "Clients/Acme/Calls")
     end
 
     test "a tick from an earlier timer chain is dropped", %{conn: conn, me: me, vault: vault} do

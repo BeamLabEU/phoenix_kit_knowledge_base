@@ -258,6 +258,7 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     |> assign(:can_edit?, can_edit?)
     |> assign(:vault, vault)
     |> release_note_without_vault()
+    |> release_gone_folder()
     |> load_listing()
     |> assign_admin_href()
   end
@@ -436,6 +437,30 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp release_note_without_vault(socket), do: socket
 
+  # The folder being listed, asked about on every refresh. A peer may have
+  # moved it since the last poll (`poll: 0` never asks again on its own). Left
+  # on the old path, the list is empty and the next note created there builds
+  # the folder again. The panel's own folder is not a row — it is the fence —
+  # and a missing vault has nothing to look up; a subfolder under a missing
+  # vault is just no longer where the list is.
+  defp release_gone_folder(
+         %{assigns: %{vault: nil, place: place, current_folder: current}} = socket
+       ) do
+    if current == place.folder, do: socket, else: assign(socket, :current_folder, place.folder)
+  end
+
+  defp release_gone_folder(socket) do
+    %{vault: vault, place: place, current_folder: current} = socket.assigns
+
+    if current == place.folder or Notes.get_folder_by_path(vault.uuid, current) do
+      socket
+    else
+      socket
+      |> assign(:current_folder, place.folder)
+      |> notice(:info, gettext("That folder was moved or deleted."))
+    end
+  end
+
   defp arm_timer(%{assigns: %{poll: ms}} = socket) when is_integer(ms) and ms > 0 do
     if connected?(socket) and is_nil(socket.assigns[:timer_ref]) do
       ref = make_ref()
@@ -473,9 +498,24 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   def handle_event("open_folder", %{"path" => path}, socket) do
     with_access(socket, :view, fn socket ->
-      if Places.within?(socket.assigns.place, path),
-        do: show_folder(socket, path),
-        else: socket
+      %{place: place, vault: vault} = socket.assigns
+
+      cond do
+        not Places.within?(place, path) ->
+          socket
+
+        # The panel's own folder is the fence, not a row, and it is created on
+        # demand. Anywhere below it has to still be there: the path came from
+        # the last listing, and the folder may have moved since.
+        path == place.folder or
+            (not is_nil(vault) and Notes.get_folder_by_path(vault.uuid, path)) ->
+          show_folder(socket, path)
+
+        true ->
+          socket
+          |> load_listing()
+          |> notice(:info, gettext("That folder was moved or deleted."))
+      end
     end)
   end
 
@@ -486,16 +526,20 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # everywhere else; `@tree_folders` holds only folders below the panel's own,
   # so a uuid not in it is outside the fence (or forged) and does nothing.
 
+  # By uuid, read again: `@tree_folders` is the last poll's picture. A folder
+  # moved since is followed to where it is, and one that has left the fence is
+  # not opened at the path it used to have — that path may belong to somebody
+  # else now, and a note created there would land in their folder.
   def handle_event("navigate_folder", %{"folder-uuid" => uuid}, socket) do
     with_access(socket, :view, fn socket ->
-      case Map.get(socket.assigns.tree_folders, uuid) do
-        nil ->
-          socket
-
-        folder ->
+      case fenced_folder(socket, uuid) do
+        %Folder{} = folder ->
           socket
           |> update(:expanded_folders, &MapSet.put(&1, uuid))
           |> show_folder(folder.relative_path)
+
+        nil ->
+          forgotten_folder(socket, uuid)
       end
     end)
   end
@@ -817,6 +861,18 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp fenced_folder(_socket, _uuid), do: nil
 
+  # In the last picture, and gone now: say so. A uuid that was never in the
+  # tree is forged, or belongs to another panel, and gets silence.
+  defp forgotten_folder(socket, uuid) do
+    if Map.has_key?(socket.assigns.tree_folders, uuid) do
+      socket
+      |> load_listing()
+      |> notice(:info, gettext("That folder was moved or deleted."))
+    else
+      socket
+    end
+  end
+
   # A folder rename or move. A partial re-index still moved the bytes, so the
   # listing and an open note follow them as on success, and the notice says
   # what a rescan repairs.
@@ -883,33 +939,17 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
 
   defp follow_moved_note(socket, _moved), do: socket
 
-  # A fresh row for the open note, after it moved or was renamed. It is taken
-  # whole only while its bytes are the ones the buffer was loaded from:
-  # `@note.content_hash` is what the stale guard compares the file against, and
-  # a row read after someone else saved carries *their* hash — the next
-  # keystroke would then overwrite their save without a word. Otherwise only
-  # where the note now lives is taken, and their change is announced; the next
-  # save is refused as stale and the writer chooses (AGENTS.md: never replace
-  # `@note` with a peer's row).
-  defp adopt_row(
-         %{assigns: %{note: %Note{content_hash: hash}}} = socket,
-         %Note{content_hash: hash} = fresh
-       ),
-       do: assign(socket, :note, fresh)
-
+  # A fresh row for the open note, after it moved or was renamed.
+  # `Notes.located_for_save/2`: the whole row only while its bytes are the
+  # buffer's, otherwise just where it now lives, and their change is announced.
+  # The next save is then refused as stale and the writer chooses.
   defp adopt_row(%{assigns: %{note: %Note{} = note}} = socket, %Note{} = fresh) do
-    socket
-    |> assign(
-      :note,
-      %{
-        note
-        | relative_path: fresh.relative_path,
-          folder_path: fresh.folder_path,
-          title: fresh.title,
-          title_key: fresh.title_key
-      }
-    )
-    |> assign(:remote_change, true)
+    located = Notes.located_for_save(note, fresh)
+    socket = assign(socket, :note, located)
+
+    if located.content_hash == fresh.content_hash,
+      do: socket,
+      else: assign(socket, :remote_change, true)
   end
 
   @numbered_attempts 20
@@ -972,8 +1012,14 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
   # in it: it may have been moved or deleted since the last poll, and creating
   # in its old path would quietly bring it back, empty, beside where it went.
   # The panel's own folder is created on demand (`Places.ensure/2`), so it is
-  # never "gone".
-  defp current_folder_still_there(%{assigns: %{vault: nil}}), do: :ok
+  # never "gone" — including when the vault itself does not exist yet. A
+  # subfolder is, once the vault is gone: creating it would rebuild a tree
+  # somebody deleted.
+  defp current_folder_still_there(%{
+         assigns: %{vault: nil, place: place, current_folder: current}
+       }) do
+    if current == place.folder, do: :ok, else: {:error, :folder_gone}
+  end
 
   defp current_folder_still_there(%{assigns: assigns}) do
     %{vault: vault, place: place, current_folder: current} = assigns
@@ -1191,10 +1237,29 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
     :ok
   end
 
+  # Re-read before writing. `@note.relative_path` is where the note was when it
+  # was opened (or at the last poll), and `force: true` skips the stale guard,
+  # so a save through that path after a move writes the old path back into
+  # existence — a second copy, or the note that has since taken the path.
+  # Outside the fence there is nowhere this panel may write; the note is let
+  # go of, the same as a delete.
   defp save(socket, content, opts \\ []) do
     %{vault: vault, note: note, user: user} = socket.assigns
     opts = Keyword.merge([actor_uuid: user.uuid, force: false], opts)
 
+    case fenced_note(socket, note.uuid) do
+      nil ->
+        socket
+        |> close_note()
+        |> load_listing()
+        |> notice(:info, gettext("That note was moved or deleted."))
+
+      %Note{} = fresh ->
+        write_note(socket, vault, Notes.located_for_save(note, fresh), content, opts)
+    end
+  end
+
+  defp write_note(socket, vault, note, content, opts) do
     case Notes.update_content(vault, note, content, opts) do
       {:ok, saved} ->
         socket
@@ -1204,13 +1269,19 @@ defmodule PhoenixKitKnowledgeBase.Web.NotesPanel do
         |> assign(:remote_change, false)
         |> assign(:notice, nil)
 
-      # The file moved underneath. Do not write: raise the flag and let the
-      # writer choose between reloading and overwriting.
+      # The bytes moved underneath. The location is already the file's, so the
+      # choice that follows (reload, or overwrite) writes where the note is.
       {:error, reason} when reason in [:stale, :missing_file] ->
-        socket |> assign(:save_status, :unsaved) |> assign(:conflict, true)
+        socket
+        |> assign(:note, note)
+        |> assign(:save_status, :unsaved)
+        |> assign(:conflict, true)
 
       {:error, reason} ->
-        socket |> assign(:save_status, :unsaved) |> notice(:error, error_message(reason))
+        socket
+        |> assign(:note, note)
+        |> assign(:save_status, :unsaved)
+        |> notice(:error, error_message(reason))
     end
   end
 

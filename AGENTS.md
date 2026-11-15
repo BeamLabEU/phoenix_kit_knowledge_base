@@ -137,6 +137,12 @@ that app; what matters here:
   key when the path is what changed. A rename or move must pass
   `existing: note`, or it finds nothing at the new path, inserts a second row,
   and leaves the note listed twice with every backlink still on the stale one.
+  The same trap hits a folder: `index_entry/4` also indexes the folder the note
+  landed in, so `relocate_folder/3` rewrites the folder rows onto the new prefix
+  *before* reindexing the notes. The other order inserts a second folder row,
+  the unique index refuses the rewrite, and `sync_folders/1` drops the uuid the
+  tree is still holding. A folder moved on disk by something other than
+  `relocate_folder/3` still gets a new uuid — the rescan has none to keep.
 - `~r{…}` closes at the first `}`, so `\p{L}` breaks it. `~r/…/` interpolates,
   so a literal `#` must be `\#`.
 
@@ -199,19 +205,24 @@ that app; what matters here:
   bundle on first mount. A notes panel on a public page therefore loads it the
   first time someone who may edit sees the tree — working as designed, but a
   host that skipped `mix phoenix_kit.update` after core 3.6 gets no drag.
-- Anything that **moves the open note** must re-read its row (`refresh_open_note/1`).
-  `@note.relative_path` is what `save_content/3` writes against, and the
-  `:kb_note_saved` broadcast cannot fix it — it comes from the same pid, so
-  `Events.own?/1` drops it. A move by *someone else* arrives as a same-hash
-  `:kb_note_saved` (rename) or a `:kb_vault_changed` (folder move, rescan):
-  `follow_open_note/1` takes the fresh row then, and only while its hash is
-  still the buffer's.
-- **Never replace `@note` with a peer's row on a remote change.**
-  `@note.content_hash` is what the buffer was loaded from, and it is what the
-  stale guard compares the file against. Taking the peer's row arms the guard
-  with *their* hash, and the next keystroke overwrites their save. Raise
-  `remote_change` and leave `@note` alone; the next save is refused as
-  `:stale` and the person chooses. Pinned by `vault_live_test.exs`.
+- Anything that **moves the open note** must re-read its row before writing.
+  `@note.relative_path` is what a save writes against, and `index_entry/4`
+  finds the row by that path. `Notes.located_for_save/2` takes the fresh
+  location and keeps the buffer's `content_hash`. A same-hash rename or folder
+  move still takes the whole row (`follow_open_note/1`, the panel's
+  `adopt_row/2`). The save itself re-reads too: the panel only polls, so a
+  keystroke can land before the next poll, and `force: true` (Keep mine) skips
+  the stale guard. Writing the old path then creates a second file, or
+  overwrites whoever has taken it. A move by *this* process is not fixed by
+  `:kb_note_saved` — that broadcast carries the writer's pid, so `Events.own?/1`
+  drops it.
+- **Never take a peer's `content_hash` onto `@note`.** It is what the buffer
+  was loaded from, and it is what the stale guard compares the file against.
+  Taking the peer's hash makes the next keystroke look current and overwrite
+  their save. Keep the buffer's hash, raise `remote_change`, and let the next
+  save come back `:stale`. The location is a different field and *is* taken —
+  leaving the old path in place is how Keep mine used to write it back into
+  existence. Pinned by `vault_live_test.exs` and `notes_panel_test.exs`.
 
 **HEEx**
 

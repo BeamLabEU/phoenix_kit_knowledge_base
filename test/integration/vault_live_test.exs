@@ -170,6 +170,70 @@ defmodule PhoenixKitKnowledgeBase.Integration.VaultLiveTest do
       type(lv, note, "moved and edited")
       assert file(vault, "archive/Ideas.md") == "moved and edited"
     end
+
+    # An edit and a move. The old path is then taken by another note. "Keep
+    # mine" forces the write, so it has to land on the moved note — writing
+    # the path the page opened overwrites the newcomer, and the index follows
+    # the path.
+    test "keep mine after a move and an edit does not write the old path", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, edited} = Notes.update_content(vault, note, "theirs")
+      render(lv)
+      {:ok, _} = Notes.move_note(vault, edited, "")
+      render(lv)
+
+      {:ok, occupant} =
+        Notes.create_note(
+          vault,
+          %{title: "Ideas", folder_path: "papers", content: "occupant"},
+          me.uuid
+        )
+
+      render(lv)
+      assert type(lv, note, "mine") =~ "This note changed since you opened it"
+      assert file(vault, "Ideas.md") == "theirs"
+      assert file(vault, "papers/Ideas.md") == "occupant"
+
+      lv |> element("button", "Keep mine, overwrite") |> render_click()
+
+      assert file(vault, "Ideas.md") == "mine"
+      assert file(vault, "papers/Ideas.md") == "occupant"
+      assert Notes.get_note(vault.uuid, note.uuid).folder_path == ""
+      assert Notes.get_note(vault.uuid, occupant.uuid).content == "occupant"
+    end
+
+    test "deleting after a move does not trash the note now at the old path", %{
+      conn: conn,
+      me: me,
+      vault: vault,
+      note: note
+    } do
+      {:ok, lv, _} = live(conn, Paths.note(vault.slug, note.uuid))
+      {:ok, edited} = Notes.update_content(vault, note, "theirs")
+      render(lv)
+      {:ok, _} = Notes.move_note(vault, edited, "")
+      render(lv)
+
+      {:ok, occupant} =
+        Notes.create_note(
+          vault,
+          %{title: "Ideas", folder_path: "papers", content: "occupant"},
+          me.uuid
+        )
+
+      render(lv)
+      lv |> element("button[aria-label='Move to trash']") |> render_click()
+
+      refute Notes.get_note(vault.uuid, note.uuid)
+      assert file(vault, "papers/Ideas.md") == "occupant"
+      assert Notes.get_note(vault.uuid, occupant.uuid).content == "occupant"
+      refute File.exists?(Path.join(Storage.vault_path(vault.directory), "Ideas.md"))
+    end
   end
 
   describe "moving and creating" do
